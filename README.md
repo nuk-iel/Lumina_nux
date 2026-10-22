@@ -171,7 +171,7 @@ dev server. AI coding agents should also read [the onboarding guide](docs/ai/AGE
 Join the [Discord community](https://discord.gg/FeNXqtbqgy) for discussion. For local development,
 see the [development workflow](docs/development/DEVELOPMENT_WORKFLOW.md).
 
-## License status
+## License
 
-A license has not been selected yet. No project license is included. Third-party dependencies
-and fonts retain their own licenses.
+Luminati is licensed under the [MIT License](LICENSE). Third-party dependencies and fonts retain
+their own licenses.

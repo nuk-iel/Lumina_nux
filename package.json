@@ -2,6 +2,7 @@
   "name": "luminati",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "An open-source engine combining pixel-art sprites with lit 3D environments, dynamic shadows and depth of field.",
   "type": "module",
   "scripts": {
