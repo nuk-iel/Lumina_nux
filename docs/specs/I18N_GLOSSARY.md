@@ -1276,7 +1276,7 @@ Where: lines, banners and the combat/party UI (`src/game/*/strings.js`). Not ter
 | Whetstone · Ironbark Tonic · Warding Charm | 磨刀石 · 铁木补剂 · 守护护符 | The shop wares. |
 | Whirl Slash · Ember Bolt · Radiant Nova · Mend | 旋风斩 · 烬火弹 · 光辉新星 · 治愈术 | UI mockup. |
 | slime · goblin · archer · shaman · bat · boar | 史莱姆 · 哥布林 · 弓手 · 萨满 · 蝙蝠 · 野猪 | Monster words in lines and banners. |
-| Moss Slime · Bramble Goblin · Thorn Archer · Hex Shaman · Cinder Bat · Ironhide Boar · Straw Dummy | 苔藓史莱姆 · 荆棘哥布林 · 荆刺弓手 · 咒术萨满 · 烬火蝙蝠 · 铁皮野猪 · 稻草假人 | Built from the place words (荆棘, 烬火, 铁皮). |
+| Moss Slime · Bramble Goblin · Thorn Archer · Hex Shaman · Cinder Bat · Ironhide Boar · Straw Dummy | 苔藓史莱姆 · 荆棘哥布林 · 棘刺弓手 · 咒术萨满 · 烬火蝙蝠 · 铁皮野猪 · 稻草假人 | Built from the place words (荆棘, 烬火, 铁皮). |
 | The Last Fire of the Pass | 隘口最后之火 | UI mockup. |
 | Tactics · Presets · Rules · Party | 战术 · 预设 · 规则 · 队伍 | UI mockup. |
 | Golden Hour · Dusk | 夕照 · 黄昏 | UI mockup. |
