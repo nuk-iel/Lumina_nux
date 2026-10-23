@@ -17,20 +17,33 @@
     .le-boot-error { max-width: 560px; padding: 0 24px; text-align: center; letter-spacing: normal; text-transform: none; }
     .le-boot-error b { display: block; margin-bottom: 8px; color: #ec7065; font-size: 15px; }
     .le-boot-error span { color: #a4adc6; font-weight: 400; }
+    :lang(zh-Hans) .le-boot { font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; letter-spacing: .12em; }
   </style>
 </head>
 <body>
-  <div id="editor"><div class="le-boot"><div>Luminati Level Editor<i></i></div></div></div>
-  <noscript>The Luminati Level Editor needs JavaScript.</noscript>
+  <div id="editor"><div class="le-boot"><div><span class="le-boot-title">Luminati Level Editor</span><i></i></div></div></div>
+  <noscript>The Luminati Level Editor needs JavaScript. / Luminati 关卡编辑器需要启用 JavaScript。</noscript>
   <script>
+    // The splash and the load-failure text in the UI language (the same choice src/editor/i18n.js
+    // makes: ?lang=, then the saved luminati.lang; the editor shows English or Chinese).
+    var LE_BOOT_ZH = (function () {
+      var lang = '';
+      try { lang = new URLSearchParams(location.search).get('lang') || localStorage.getItem('luminati.lang') || ''; } catch (e) { /* storage off */ }
+      return /^zh/i.test(lang);
+    })();
+    if (LE_BOOT_ZH) {
+      document.documentElement.lang = 'zh-Hans';
+      document.querySelector('#editor .le-boot-title').textContent = 'Luminati 关卡编辑器';
+    }
     // If the editor code cannot load at all (a failed import, a syntax error), say so instead of
     // leaving the boot splash up forever. Errors after the editor has been built are left alone.
     (function () {
       function fail(msg) {
         var boot = document.querySelector('#editor .le-boot');
         if (!boot) return;
-        boot.innerHTML = '<div class="le-boot-error"><b>The level editor could not load</b><span></span></div>';
-        boot.querySelector('span').textContent = String(msg || 'Unknown error') + ' — see the browser console for details.';
+        boot.innerHTML = '<div class="le-boot-error"><b></b><span></span></div>';
+        boot.querySelector('b').textContent = LE_BOOT_ZH ? '关卡编辑器无法加载' : 'The level editor could not load';
+        boot.querySelector('span').textContent = String(msg || (LE_BOOT_ZH ? '未知错误' : 'Unknown error')) + (LE_BOOT_ZH ? ' —— 详情请查看浏览器控制台。' : ' — see the browser console for details.');
       }
       window.__leBootFail = fail;
       window.addEventListener('error', function (e) { fail(e && (e.message || (e.target && e.target.src && 'Failed to load ' + e.target.src))); }, true);

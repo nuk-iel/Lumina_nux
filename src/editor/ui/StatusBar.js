@@ -27,7 +27,7 @@ export class StatusBar {
     this._message = null;
     state.on('hover', () => this.updatePos());
     state.on('tool', () => this.updateHelp());
-    state.on('status', (m, opts) => this.flash(m, { stale: opts?.stale }));
+    state.on('status', (m, opts) => this.flash(m, { stale: opts?.stale, error: opts?.error }));
     state.on('change', () => { this.updateCounts(); this.updatePos(); this._dropStale(); });
     state.on('selection', () => this.updateCounts());
     state.on('view', () => { this.updateStory(); this._dropStale(); });
@@ -67,7 +67,9 @@ export class StatusBar {
    * Show a transient message for a few seconds.
    * @param {unknown} message
    * @param {{ error?: boolean, stale?: () => boolean }} [opts] stale: asked after every view change
-   *   and edit while the message shows; true drops it at once (`EditorState.notify`)
+   *   and edit while the message shows; true drops it at once (`EditorState.notify`). error: shown
+   *   as a warning; when not given, guessed from English words (error, fail, could not …) — a
+   *   translated message passes it explicitly
    */
   flash(message, { error = /error|fail|could not|not found|invalid/i.test(String(message)), stale } = {}) {
     clearTimeout(this._timer);

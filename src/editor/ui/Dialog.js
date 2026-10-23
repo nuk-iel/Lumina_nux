@@ -7,6 +7,7 @@
  */
 import { h, icon } from './dom.js';
 import { ICONS } from '../icons.js';
+import { tr } from '../i18n.js';
 
 const stack = [];
 
@@ -45,8 +46,11 @@ const isTextEntry = (el) => el?.tagName === 'TEXTAREA' || el?.isContentEditable
 /**
  * A footer button.
  * @typedef {object} DialogButton
- * @property {string} label
- * @property {any} [value]  resolves the dialog (default: the label)
+ * @property {string} label  the text shown (translated)
+ * @property {string} [key]  the button's identity, independent of the language: `dlg.button(key)`
+ *   finds it and it resolves the dialog when there is no `value` (default: the label). Callers
+ *   that compare the result or look a button up give the English word ('Save', 'Apply' …).
+ * @property {any} [value]  resolves the dialog (default: the key)
  * @property {boolean} [primary]
  * @property {boolean} [danger]
  * @property {boolean} [left]  puts it on the left of the footer
@@ -63,7 +67,8 @@ const isTextEntry = (el) => el?.tagName === 'TEXTAREA' || el?.isContentEditable
  *   beforeClose: runs when Escape or × would dismiss the dialog (not for its buttons or
  *   `close()`); returning false keeps it open — e.g. after asking "Discard changes?"
  * @returns {{ el: HTMLElement, body: HTMLElement, close(value?: any): void, result: Promise<any>,
- *             button(label: string): HTMLButtonElement|undefined, setBusy(b: boolean): void }}
+ *             button(key: string): HTMLButtonElement|undefined, setBusy(b: boolean): void }}
+ *   button: by the button's `key` (else its label)
  */
 export function showDialog(opts) {
   const prevFocus = /** @type {HTMLElement|null} */ (document.activeElement);
@@ -86,7 +91,7 @@ export function showDialog(opts) {
     h('div', { class: 'le-dialog-titles' },
       h('h2', { id: titleId, class: 'le-dialog-title' }, opts.title),
       opts.subtitle ? h('div', { class: 'le-dialog-subtitle' }, opts.subtitle) : null),
-    opts.dismissible === false ? null : h('button', { class: 'le-icon-btn le-dialog-close', type: 'button', title: 'Close (Esc)', onClick: () => dismiss() }, icon(ICONS.close))),
+    opts.dismissible === false ? null : h('button', { class: 'le-icon-btn le-dialog-close', type: 'button', title: tr('common.closeEsc'), onClick: () => dismiss() }, icon(ICONS.close))),
   body,
   (opts.buttons?.length ? footer : null));
   const overlay = h('div', { class: 'le-overlay' }, panel);
@@ -116,7 +121,7 @@ export function showDialog(opts) {
       else if (document.activeElement && panel.contains(document.activeElement)) /** @type {HTMLElement} */ (document.activeElement).blur?.();
       resolve(value);
     },
-    button: (label) => buttons.get(label),
+    button: (key) => buttons.get(key),
     setBusy(b) {
       busy = b;
       panel.classList.toggle('is-busy', b);
@@ -163,11 +168,11 @@ export function showDialog(opts) {
           }
           if (r === false) return;
         }
-        dlg.close(b.value ?? b.label);
+        dlg.close(b.value ?? b.key ?? b.label);
       },
     }, b.icon ? icon(b.icon) : null, b.label);
     if (b.primary) btn.dataset.primary = '1';
-    buttons.set(b.label, btn);
+    buttons.set(b.key ?? b.label, btn);
     (b.left ? left : right).appendChild(btn);
   }
 
@@ -238,8 +243,8 @@ export function confirmDialog({ title, message, buttons = null, icon: ic = ICONS
     title, icon: ic, width, className: 'is-confirm',
     content: typeof message === 'string' ? h('p', { class: 'le-dialog-text' }, message) : message,
     buttons: buttons ?? [
-      { label: 'Cancel', value: false },
-      { label: 'OK', value: true, primary: !danger, danger },
+      { key: 'Cancel', label: tr('common.cancel'), value: false },
+      { key: 'OK', label: tr('common.ok'), value: true, primary: !danger, danger },
     ],
   }).result;
 }
@@ -250,5 +255,5 @@ export function alertDialog({ title, message, lines = null, icon: ic = ICONS.inf
     message ? h('p', { class: 'le-dialog-text' }, message) : null,
     lines?.length ? h('ul', { class: 'le-dialog-list' }, lines.map((l) => h('li', null, l))) : null,
   ];
-  return showDialog({ title, icon: ic, width, content, buttons: [{ label: 'OK', value: true, primary: true }] }).result;
+  return showDialog({ title, icon: ic, width, content, buttons: [{ key: 'OK', label: tr('common.ok'), value: true, primary: true }] }).result;
 }

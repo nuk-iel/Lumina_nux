@@ -19,7 +19,8 @@
     "i18n:check": "node tools/check-i18n.mjs",
     "i18n:test": "node tools/test-i18n.mjs",
     "i18n:keys": "node tools/i18n-keys.mjs",
-    "keys:test": "node tools/test-text-keys.mjs"
+    "keys:test": "node tools/test-text-keys.mjs",
+    "editor:i18n:test": "node tools/test-editor-i18n.mjs"
   },
   "dependencies": {
     "@fontsource/cinzel": "^5.3.0",

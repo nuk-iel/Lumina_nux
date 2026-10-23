@@ -11,6 +11,7 @@ import {
   keyedState, carryEdit, fillObjectKeys, rootState, carryRootEdit, mergeRootKeys, fillRootKeys, keySet, minter, textFieldsOf,
   preferSharedCopies, shareKeys,
 } from './textKeys.js';
+import { tr } from './i18n.js';
 
 /**
  * @import { Level } from '../engine/level/types.js'
@@ -756,9 +757,10 @@ export class EditorState extends EventEmitter {
   /**
    * Transient status-bar message.
    * @param {string} message
-   * @param {{ stale?: () => boolean }} [opts] stale: while the message shows, the status bar asks
-   *   it after every view change and edit, and drops the message once it answers true (a "… is
-   *   hidden" message once the object is shown again)
+   * @param {{ stale?: () => boolean, error?: boolean }} [opts] stale: while the message shows, the
+   *   status bar asks it after every view change and edit, and drops the message once it answers
+   *   true (a "… is hidden" message once the object is shown again). error: show it as a warning
+   *   (without it the status bar guesses from English words, which a translated message lacks)
    */
   notify(message, opts) {
     this.emit('status', message, opts);
@@ -781,7 +783,7 @@ export class EditorState extends EventEmitter {
 export function reportToolError(state, err, source = '[editor]') {
   console.warn(`${source} tool error`, err);
   if (state.inTransaction) state.commit();
-  state.notify(`Tool error: ${/** @type {Error} */ (err)?.message ?? err}`);
+  state.notify(tr('app.toolError', { message: /** @type {Error} */ (err)?.message ?? err }), { error: true });
 }
 
 /**

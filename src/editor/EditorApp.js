@@ -54,6 +54,8 @@ import { ICONS, LOGO_SVG } from './icons.js';
 import { ownValue } from '../engine/utils/own.js';
 import { textKeyWarnings, textMapOf, parseKeyInput, findTextKey } from './textKeys.js';
 import { levelTexts } from '../engine/i18n/TextKeys.js';
+import { getLang } from '../engine/i18n/I18n.js';
+import { tr, editorLang, langName, switchLanguage, EDITOR_LANGS } from './i18n.js';
 
 /**
  * @import { Level, LevelObjectOf } from '../engine/level/types.js'
@@ -717,7 +719,8 @@ export class EditorApp {
     document.addEventListener('cut', (e) => this._onCopy(e, true));
     document.addEventListener('paste', (e) => this._onPaste(e));
     window.addEventListener('beforeunload', (e) => {
-      if (!this.state.dirty) return;
+      // (a language switch already asked about the changes: setLanguage)
+      if (!this.state.dirty || this._leaving) return;
       this._autosave(true);
       e.preventDefault();
       e.returnValue = '';
@@ -946,6 +949,9 @@ export class EditorApp {
         },
       },
 
+      'lang.en': { label: langName('en'), checked: () => editorLang() === 'en', run: () => this.setLanguage('en') },
+      'lang.zh': { label: langName('zh'), checked: () => editorLang() === 'zh', run: () => this.setLanguage('zh') },
+
       'help.shortcuts': { label: 'Keyboard shortcuts', keyLabel: 'This list', shortcut: '?', icon: ICONS.keyboard, run: () => shortcutsDialog(this._shortcutGroups()) },
       'help.game': { label: 'Open the Emberfall demo', icon: ICONS.external, run: () => window.open('game.html', '_blank') },
       'help.launcher': { label: 'All campaigns and levels', icon: ICONS.external, run: () => window.open('index.html', '_blank') },
@@ -963,7 +969,7 @@ export class EditorApp {
     return [
       { id: 'file', label: 'File', items: ['file.new', 'file.open', 'file.openFile', '-', 'file.save', 'file.saveAs', 'file.export', '-', 'file.playtest'] },
       { id: 'edit', label: 'Edit', items: ['edit.undo', 'edit.redo', '-', 'edit.cut', 'edit.copy', 'edit.paste', 'edit.duplicate', 'edit.delete', '-', 'edit.rotateCcw', 'edit.rotateCw', '-', 'edit.selectAll', 'edit.deselect', '-', 'edit.findTextKey'] },
-      { id: 'view', label: 'View', items: [{ header: 'Layout' }, 'view.split', 'view.3d', 'view.2d', '-', 'view.frameSelection', 'view.frameLevel', '-', { header: 'Show' }, 'view.grid', 'view.textured2d', 'view.objects', 'view.markers', 'view.showAll', 'view.storyPreview', '-', { header: '3D preview' }, 'view.gameCamera', 'view.postfx', 'view.atmosphere'] },
+      { id: 'view', label: 'View', items: [{ header: 'Layout' }, 'view.split', 'view.3d', 'view.2d', '-', 'view.frameSelection', 'view.frameLevel', '-', { header: 'Show' }, 'view.grid', 'view.textured2d', 'view.objects', 'view.markers', 'view.showAll', 'view.storyPreview', '-', { header: '3D preview' }, 'view.gameCamera', 'view.postfx', 'view.atmosphere', '-', { header: tr('app.menu.language') }, ...EDITOR_LANGS.map((l) => `lang.${l}`)] },
       { id: 'level', label: 'Level', items: ['level.settings', 'level.resize', '-', 'level.validate', 'level.assignTextKeys', 'level.playtest', 'level.openInGame'] },
       { id: 'help', label: 'Help', items: ['help.shortcuts', 'help.game', 'help.launcher', '-', 'help.about'] },
     ];
@@ -1213,6 +1219,18 @@ export class EditorApp {
     if (r === 'discard') return true;
     if (r === 'save') return this.save();
     return false;
+  }
+
+  /**
+   * Show the editor in another language: ask about unsaved changes, save the choice (the game's
+   * too) and reload (src/editor/i18n.js `switchLanguage`).
+   * @param {string} lang 'en' | 'zh'
+   */
+  async setLanguage(lang) {
+    if (lang === editorLang()) return;
+    if (!(await this.confirmDiscard('switch the language'))) return;
+    this._leaving = true;
+    switchLanguage(lang);
   }
 
   async newLevel() {
@@ -1663,7 +1681,8 @@ export class EditorApp {
     const url = ref.kind === 'project' && ref.campaign
       ? `game.html?campaign=${encodeURIComponent(ref.campaign)}&level=local:${PLAYTEST_SLOT}&as=${encodeURIComponent(ref.name)}&autostart=1`
       : `game.html?level=local:${PLAYTEST_SLOT}&autostart=1${st.origin ? `&i18n=${st.origin.split('/').map(encodeURIComponent).join('/')}` : ''}`;
-    const w = window.open(url, 'luminati-playtest');
+    // the game plays in the editor's language (a `?lang=` on the editor is not saved, so pass it)
+    const w = window.open(getLang() === 'en' ? url : `${url}&lang=${getLang()}`, 'luminati-playtest');
     if (!w) st.notify('Pop-up blocked — allow pop-ups for this page to play-test (the level is saved in the play-test slot).');
     else st.notify(`Play-testing “${level.name}” in a new tab`);
     return true;
