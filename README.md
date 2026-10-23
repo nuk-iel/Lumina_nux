@@ -1,5 +1,10 @@
 # Luminati — a 2.5D pixel-art engine for three.js
 
+> **Mirror notice:** This repository is a mirror of
+> [stubborn-hug/lumina](https://gitlab.com/stubborn-hug/lumina) on GitLab, created by
+> **stubborn-hug**. All credit for the original work belongs to its author. It is redistributed
+> under the original [MIT License](LICENSE), with the original commit history preserved.
+
 Luminati combines pixel-art sprites with lit 3D environments, dynamic shadows and depth of field.
 It is inspired by the diorama look of Square Enix's HD-2D games and built with three.js and
 plain JavaScript ES modules.
