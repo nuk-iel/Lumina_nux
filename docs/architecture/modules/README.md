@@ -1,5 +1,7 @@
 # Engine module reference: index
 
+English | [简体中文](README.zh-CN.md)
+
 > **Purpose.** This is the entry point to the per-module reference of the Luminati engine
 > (`src/engine/`). It lists every module area with a one-line responsibility and a link to its
 > reference page, shows how the areas depend on each other, reproduces the complete public API

@@ -1,5 +1,7 @@
 # Level editor guide
 
+English | [简体中文](LEVEL_EDITOR_GUIDE.zh-CN.md)
+
 > **Purpose** — The complete manual of the Luminati level editor (`editor.html`): layout, views and
 > camera controls, every tool with its options and modifier keys, the palettes, the inspector
 > (including the dialogue syntax), the outliner, level settings, saving and opening, autosave and

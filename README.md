@@ -1,5 +1,7 @@
 # Luminati — a 2.5D pixel-art engine for three.js
 
+English | [简体中文](README.zh-CN.md)
+
 > **Mirror notice:** This repository is a mirror of
 > [stubborn-hug/lumina](https://gitlab.com/stubborn-hug/lumina) on GitLab, created by
 > **stubborn-hug**. All credit for the original work belongs to its author. It is redistributed

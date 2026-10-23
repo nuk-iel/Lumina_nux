@@ -1,5 +1,7 @@
 # Development workflow
 
+English | [简体中文](DEVELOPMENT_WORKFLOW.zh-CN.md)
+
 > **Purpose.** How to work on Luminati day to day: setup, the project layout, running and building,
 > the sandbox-first approach for engine work, how levels are edited or generated, the regression
 > practice that keeps Emberfall and the level files stable, version-control hygiene, platform

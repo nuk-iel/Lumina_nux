@@ -1,5 +1,7 @@
 # Getting started
 
+English | [简体中文](GETTING_STARTED.zh-CN.md)
+
 > **Purpose** — Everything you need to run Luminati on your own machine: requirements, install,
 > the dev server and its URLs, production builds and deployment, and fixes for the problems
 > people usually hit on day one.

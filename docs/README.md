@@ -1,5 +1,7 @@
 # Luminati documentation
 
+English | [简体中文](README.zh-CN.md)
+
 > **Purpose.** The index of Luminati's documentation: what the project is, every document with a
 > one-line summary, reading paths for four kinds of reader, and which document is the source of
 > truth for which question. Start here (or on the visual [landing page](index.html)).

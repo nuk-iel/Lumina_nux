@@ -1,5 +1,7 @@
 # Playing the game
 
+English | [简体中文](PLAYING_THE_GAME.zh-CN.md)
+
 > **Purpose** — The complete player's guide to the Luminati demo game: how a session flows, every
 > control, the HUD and maps, talking to villagers, time of day and weather, photo mode, music, the
 > debug panel, the shipped levels, guided tours of **Emberfall** and **Starfall Vale**, combat and

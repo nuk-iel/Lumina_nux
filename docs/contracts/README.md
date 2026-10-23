@@ -1,5 +1,7 @@
 # Contracts — what is binding, what is descriptive, and how to change it
 
+English | [简体中文](README.zh-CN.md)
+
 > **Purpose.** Luminati uses written contracts to define exported names, signatures, units and
 > conventions. This page explains which
 > documents are *binding* contracts, which are *descriptive* notes, how they relate to the code

@@ -1,5 +1,7 @@
 # Level design guide — rules learned the hard way
 
+English | [简体中文](LEVEL_DESIGN_GUIDE.zh-CN.md)
+
 Practical rules for building Luminati levels that look right from the diorama camera and play without
 dead ends. Most of them were not obvious up front: they come from the reviews of Emberfall, the level
 editor and Starfall Vale (four independent reviewers per phase, ~160 findings in total) and from the

@@ -1,5 +1,7 @@
 # AI agent onboarding — start here
 
+English | [简体中文](AGENT_ONBOARDING.zh-CN.md)
+
 > **Purpose.** The first file a fresh AI coding session (or a new human contributor) should read.
 > It says what Luminati is, which documents to read for which kind of task, where everything lives,
 > the invariants that are easy to break, how to verify a change, and how to coordinate larger changes.
