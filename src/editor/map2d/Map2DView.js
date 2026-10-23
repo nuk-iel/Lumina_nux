@@ -25,6 +25,8 @@ import { enemyKind, bossArena, bossGate, dataColliders, levelStartTest } from '.
 import { isTypingTarget } from '../ui/dom.js';
 import { reportToolError } from '../EditorState.js';
 import { ownValue } from '../../engine/utils/own.js';
+import { tr, editorLang } from '../i18n.js';
+import { optionLabel } from '../catalogI18n.js';
 
 /**
  * @import { EditorState } from '../EditorState.js'
@@ -1591,7 +1593,7 @@ export class Map2DView {
         }
         ctx.restore();
         labels.push({ x: o.x, z: o.z, text: def.glyph, kind: 'glyph', color: def.color, size: 15, badge: true });
-        if (zoomedIn) labels.push({ x: o.x, z: o.z + R, text: `${o.count ?? 4} × ${o.kind ?? 'chicken'}`, kind: 'small', color: def.color });
+        if (zoomedIn) labels.push({ x: o.x, z: o.z + R, text: `${o.count ?? 4} × ${optionLabel(o.kind ?? 'chicken')}`, kind: 'small', color: def.color });
         return;
       }
       case 'enemy': {
@@ -1638,7 +1640,7 @@ export class Map2DView {
         ctx.restore();
         labels.push({ x: o.x, z: o.z, text: def.glyph, kind: 'glyph', color: col, size: 15, badge: true });
         if (zoomedIn || this.state.selection.includes(o.id)) {
-          labels.push({ x: o.x, z: o.z + (info.boss && arena ? 1.2 : R), text: `${kind} ×${spots.length} · Lv${o.level ?? 1}`, kind: 'small', color: col });
+          labels.push({ x: o.x, z: o.z + (info.boss && arena ? 1.2 : R), text: `${editorLang() === 'zh' ? info.label : kind} ×${spots.length} · Lv${o.level ?? 1}`, kind: 'small', color: col });
         }
         return;
       }
@@ -1665,7 +1667,7 @@ export class Map2DView {
         }
         ctx.restore();
         labels.push({ x: o.x, z: o.z, text: def.glyph, kind: 'glyph', color: def.color, size: 15, badge: true });
-        if (this.scale >= 22) labels.push({ x: o.x - hx, z: o.z - hz, text: o.preset ?? 'particles', kind: 'corner', color: def.color });
+        if (this.scale >= 22) labels.push({ x: o.x - hx, z: o.z - hz, text: o.preset != null ? optionLabel(o.preset) : tr('tools.map.particles'), kind: 'corner', color: def.color });
         return;
       }
       case 'region': {
@@ -1673,7 +1675,7 @@ export class Map2DView {
         ctx.beginPath(); ctx.rect(o.minX, o.minZ, o.maxX - o.minX, o.maxZ - o.minZ); ctx.fill();
         haloDash(ctx, u, rgba('#e2c17f', 0.95), [7, 5], 1.6);
         ctx.restore();
-        if (this.scale >= 9) labels.push({ x: o.minX, z: o.minZ, text: o.name || 'Region', kind: 'region', sub: this.scale >= 30 ? o.sub : '' });
+        if (this.scale >= 9) labels.push({ x: o.minX, z: o.minZ, text: o.name || tr('tools.map.region'), kind: 'region', sub: this.scale >= 30 ? o.sub : '' });
         labels.push({ x: (o.minX + o.maxX) / 2, z: (o.minZ + o.maxZ) / 2, text: def.glyph, kind: 'glyph', color: '#e2c17f', size: 14, badge: true });
         return;
       }
@@ -1997,7 +1999,7 @@ export class Map2DView {
         ctx.fillText(l.text, p.x, p.y + 0.5);
       } else if (l.kind === 'region') {
         const text = l.sub ? `${l.text} · ${l.sub}` : l.text;
-        ctx.font = '600 11px system-ui, sans-serif';
+        ctx.font = uiFont('600 11px');
         ctx.textAlign = 'left';
         const w = ctx.measureText(text).width;
         // regions sharing a corner / edge: stack the tags instead of drawing them on top of
@@ -2015,7 +2017,7 @@ export class Map2DView {
         ctx.fillText(text, p.x + 9, y0 + 9.5);
         ctx.textAlign = 'center';
       } else if (l.kind === 'corner') {
-        ctx.font = '600 10px system-ui, sans-serif';
+        ctx.font = uiFont('600 10px');
         ctx.textAlign = 'left';
         const w = ctx.measureText(l.text).width;
         ctx.fillStyle = 'rgba(10,14,28,0.78)';
@@ -2025,7 +2027,7 @@ export class Map2DView {
         ctx.textAlign = 'center';
       } else {
         const small = l.kind === 'small';
-        ctx.font = small ? '10px system-ui, sans-serif' : '600 11px system-ui, sans-serif';
+        ctx.font = small ? uiFont('10px') : uiFont('600 11px');
         const w = ctx.measureText(l.text).width;
         const y = l.kind === 'npc' ? p.y + 14 : small ? p.y + 10 : p.y;
         ctx.fillStyle = 'rgba(10,14,28,0.78)';
@@ -2037,7 +2039,7 @@ export class Map2DView {
   }
 
   _tooltip(ctx, x, y, text) {
-    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.font = uiFont('600 12px');
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     const w = ctx.measureText(text).width + 16;
@@ -2060,6 +2062,15 @@ export class Map2DView {
 // ---------------------------------------------------------------------------------------------
 
 const round3 = (v) => Math.round(v * 1000) / 1000;
+
+/**
+ * A canvas font for the map's tags and tooltip (`spec`: weight and size): the system UI face, with
+ * a CJK face first while the editor shows Chinese (the tag heights fit either).
+ * @param {string} spec e.g. '600 11px'
+ */
+function uiFont(spec) {
+  return editorLang() === 'zh' ? `${spec} "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif` : `${spec} system-ui, sans-serif`;
+}
 
 function union(a, b) {
   return { minI: Math.min(a.minI, b.minI), maxI: Math.max(a.maxI, b.maxI), minJ: Math.min(a.minJ, b.minJ), maxJ: Math.max(a.maxJ, b.maxJ) };
@@ -2122,7 +2133,18 @@ function drawBounds(o) {
 export function eventTag(o) {
   const on = typeof o.on === 'string' && o.on ? o.on : 'use';
   const label = typeof o.label === 'string' ? o.label.trim() : '';
-  return `! ${on}${label ? ` · ${label}` : ''}${isBackgroundEvent(o) ? ' (background)' : ''}`;
+  return `! ${eventTriggerWord(on)}${label ? ` · ${label}` : ''}${isBackgroundEvent(o) ? tr('tools.map.background') : ''}`;
+}
+
+/** The triggers with a short display word ('tools.map.on.*'; another value shows as it is). */
+const EVENT_ON_WORDS = new Set(['use', 'enter', 'leave', 'arrive', 'change', 'time', 'cleared']);
+
+/**
+ * A story event's trigger (`on`) as the short word of its tag: the value itself in English.
+ * @param {string} on
+ */
+export function eventTriggerWord(on) {
+  return EVENT_ON_WORDS.has(on) ? tr(`tools.map.on.${on}`) : on;
 }
 
 /**
@@ -2137,10 +2159,10 @@ export function isBackgroundEvent(o) {
 /** What a story event waits for, for its tag's second part (zoomed in): condition, hour, group. */
 function eventSub(o) {
   const parts = [];
-  if (typeof o.if === 'string' && o.if.trim()) parts.push(`if ${o.if.trim()}`);
-  if (o.on === 'time' && Number.isFinite(o.at)) parts.push(`at ${o.at}h`);
+  if (typeof o.if === 'string' && o.if.trim()) parts.push(tr('tools.map.if', { cond: o.if.trim() }));
+  if (o.on === 'time' && Number.isFinite(o.at)) parts.push(tr('tools.map.at', { hour: o.at }));
   if (o.on === 'cleared' && typeof o.group === 'string' && o.group) parts.push(o.group);
-  if (o.once) parts.push('once');
+  if (o.once) parts.push(tr('tools.map.once'));
   return parts.join(' · ');
 }
 

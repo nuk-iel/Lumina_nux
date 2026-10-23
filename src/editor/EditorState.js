@@ -252,7 +252,7 @@ export class EditorState extends EventEmitter {
   // -------------------------------------------------------------------------------------------
 
   /** Start a transaction (e.g. at pointer-down of a brush stroke). Nested calls are merged. */
-  begin(label = 'Edit') {
+  begin(label = tr('app.undo.edit')) {
     if (this._tx) { this._tx.depth++; return; }
     this._tx = {
       label, depth: 1, before: JSON.stringify(this.level), selectionBefore: [...this.selection],
@@ -445,7 +445,7 @@ export class EditorState extends EventEmitter {
   }
 
   /** Replace the level through an undoable edit (resize, import into current…). */
-  setLevel(level, label = 'Replace level') {
+  setLevel(level, label = tr('app.undo.replaceLevel')) {
     this._edit(label, (tx) => {
       this.level = level;
       const ids = new Set(level.objects.map((o) => o.id));
@@ -467,7 +467,7 @@ export class EditorState extends EventEmitter {
    * key of the level's legend; any other value is ignored). Returns the number of tiles that
    * changed. One 'change' event for the whole batch.
    */
-  editTiles(cells, label = 'Paint') {
+  editTiles(cells, label = tr('app.undo.paint')) {
     return this._edit(label, (tx) => {
       let n = 0;
       let rect = null;
@@ -488,7 +488,7 @@ export class EditorState extends EventEmitter {
   }
 
   setTile(i, j, ch) { return this.editTiles([{ i, j, tile: ch }]) > 0; }
-  setHeight(i, j, level) { return this.editTiles([{ i, j, height: level }], 'Height') > 0; }
+  setHeight(i, j, level) { return this.editTiles([{ i, j, height: level }], tr('app.undo.height')) > 0; }
 
   // -------------------------------------------------------------------------------------------
   // Object edits
@@ -502,7 +502,7 @@ export class EditorState extends EventEmitter {
    * stay unless the level holds them already.
    */
   addObject(type, x, z, overrides = {}, { select = true } = {}) {
-    return this._edit(`Add ${OBJECT_TYPES[type]?.label ?? type}`, (tx) => {
+    return this._edit(tr('app.undo.add', { what: OBJECT_TYPES[type]?.label ?? type }), (tx) => {
       const obj = addObjectRaw(this.level, type, x, z, overrides);
       if (textFieldsOf(obj.type) || Object.hasOwn(obj, 'textKeys')) {
         const used = keySet(this.level, new Set([obj]));
@@ -520,7 +520,7 @@ export class EditorState extends EventEmitter {
    * keys, a cut-and-paste keeps its own — and a text without one gets one.
    */
   insertObjects(objs, { select = true } = {}) {
-    return this._edit('Paste', (tx) => {
+    return this._edit(tr('app.undo.paste'), (tx) => {
       const ids = new Set(this.level.objects.map((o) => o.id));
       const added = [];
       // (all normalised first: an object normalizeObject refuses throws before the level changes)
@@ -552,7 +552,7 @@ export class EditorState extends EventEmitter {
    * is keyed afresh as Assign keys it. A text whose English the edit changed gets a new key when
    * another file holds its key with other English (copy-on-write: `sharedTexts`).
    */
-  updateObject(id, patch, label = 'Edit object') {
+  updateObject(id, patch, label = tr('app.undo.editObject')) {
     return this._edit(label, (tx) => {
       const obj = this.getObject(id);
       if (!obj) return null;
@@ -571,7 +571,7 @@ export class EditorState extends EventEmitter {
   }
 
   /** Move objects (and/or the spawn when 'spawn' is in ids) by (dx, dz). */
-  moveObjects(ids, dx, dz, label = 'Move') {
+  moveObjects(ids, dx, dz, label = tr('app.undo.move')) {
     if (!dx && !dz) return;
     this._edit(label, (tx) => {
       for (const id of ids) {
@@ -587,7 +587,7 @@ export class EditorState extends EventEmitter {
     });
   }
 
-  removeObjects(ids, label = 'Delete') {
+  removeObjects(ids, label = tr('app.undo.delete')) {
     const set = new Set(ids);
     this._edit(label, (tx) => {
       const before = this.level.objects.length;
@@ -599,7 +599,7 @@ export class EditorState extends EventEmitter {
   }
 
   setSpawn(x, z, facing = this.level.spawn.facing) {
-    this._edit('Move player start', (tx) => {
+    this._edit(tr('app.undo.moveSpawn'), (tx) => {
       this.level.spawn = { ...this.level.spawn, x, z, facing };
       this._changed(tx, { objects: true }, null, ['spawn']);
     });
@@ -612,7 +612,7 @@ export class EditorState extends EventEmitter {
    * keeps its key (a new one gets one, a cleared one loses it); `textKeys` in a patch is merged
    * into the level's, never replaces them (docs/specs/I18N.md §4.10).
    */
-  setLevelProps(patch, label = 'Level settings') {
+  setLevelProps(patch, label = tr('app.undo.levelSettings')) {
     this._edit(label, (tx) => {
       let terrain = false;
       const before = rootState(this.level);
@@ -647,7 +647,7 @@ export class EditorState extends EventEmitter {
    *   `sources`: each copied level's keyed texts (`TextKeys.levelTexts`)
    * @returns {{ objects: number, root: boolean }}
    */
-  assignTextKeys(label = 'Assign text keys', { sources = [] } = {}) {
+  assignTextKeys(label = tr('app.undo.assignTextKeys'), { sources = [] } = {}) {
     return this._edit(label, (tx) => {
       const L = this.level;
       // (what each object's keys were: an object Assign changes is one of the change's ids)

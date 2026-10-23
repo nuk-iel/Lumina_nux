@@ -13,6 +13,28 @@
  * conditions are capped in length and depth.
  */
 
+/**
+ * How the errors of a condition are worded: in English here; messages.js installs the page's
+ * language (`setConditionWording`, strings.js `cond.<key>`), so this module imports nothing. The
+ * wording returns undefined for a key it does not word (English, Japanese): the English stays.
+ * @type {(key: string, vars: Record<string, any>) => string|undefined}
+ */
+let wording = () => undefined;
+
+/**
+ * Install the wording of the condition errors (messages.js does, when it loads).
+ * @param {(key: string, vars: Record<string, any>) => string|undefined} fn
+ */
+export function setConditionWording(fn) {
+  wording = fn;
+}
+
+/**
+ * A condition error: `en` unless the wording words `key`.
+ * @param {string} key @param {string} en @param {Record<string, any>} [vars]
+ */
+const say = (key, en, vars = {}) => wording(key, vars) ?? en;
+
 // =================================================================================================
 // Names
 // =================================================================================================
@@ -121,7 +143,7 @@ function tokenize(s) {
     if (two === '&&' || two === '||' || two === '<=' || two === '>=' || two === '!=' || two === '==') { tokens.push(two); k += 2; continue; }
     if (c === '<' || c === '>' || c === '=' || c === '!') { tokens.push(c); k++; continue; }
     const m = /^-?[A-Za-z0-9_.][A-Za-z0-9_.-]*(:[A-Za-z0-9_][A-Za-z0-9_.-]*)?/.exec(s.slice(k));
-    if (!m) return { tokens, error: `"${c}" cannot be in a condition` };
+    if (!m) return { tokens, error: say('badChar', `"${c}" cannot be in a condition`, { c }) };
     tokens.push(m[0]);
     k += m[0].length;
   }
@@ -138,16 +160,19 @@ export function parseRef(t) {
   if (colon >= 0) {
     const kind = t.slice(0, colon);
     const name = t.slice(colon + 1);
-    if (!REF_KINDS.includes(/** @type {any} */ (kind))) return `unknown kind "${kind}:" (use ${REF_KINDS.map((x) => `${x}:`).join(', ')})`;
-    if (!isStoryName(name)) return `"${name}" is not a name`;
+    if (!REF_KINDS.includes(/** @type {any} */ (kind))) {
+      const kinds = REF_KINDS.map((x) => `${x}:`).join(', ');
+      return say('unknownKind', `unknown kind "${kind}:" (use ${kinds})`, { kind, kinds });
+    }
+    if (!isStoryName(name)) return say('notName', `"${name}" is not a name`, { v: name });
     return { kind: /** @type {RefKind} */ (kind), name };
   }
-  if (NUMBER.test(t)) return `a number (${t}) cannot stand alone`;
-  if (EXP_NUMBER.test(t)) return `"${t}" is a number with an exponent — numbers are plain decimals (1000, 0.5)`;
-  if (!isStoryName(t)) return `"${t}" is not a name`;
+  if (NUMBER.test(t)) return say('numberAlone', `a number (${t}) cannot stand alone`, { v: t });
+  if (EXP_NUMBER.test(t)) return say('exponent', `"${t}" is a number with an exponent — numbers are plain decimals (1000, 0.5)`, { v: t });
+  if (!isStoryName(t)) return say('notName', `"${t}" is not a name`, { v: t });
   const low = t.toLowerCase();
   if (GAME_REFS.includes(/** @type {any} */ (low))) return { kind: 'game', name: low };
-  if (RESERVED_WORDS.has(low)) return `"${t}" is a reserved word (not a flag name)`;
+  if (RESERVED_WORDS.has(low)) return say('reservedFlag', `"${t}" is a reserved word (not a flag name)`, { v: t });
   return { kind: '', name: t };
 }
 
@@ -164,14 +189,14 @@ export function parseRef(t) {
 function rightValue(ref, t, cmp, v) {
   const text = isTextRef(ref);
   if (NUMBER.test(v)) {
-    if (text) throw new Error(`${t} is compared to a word, not a number`);
+    if (text) throw new Error(say('comparedToWord', `${t} is compared to a word, not a number`, { ref: t }));
     return Number(v);
   }
-  if (EXP_NUMBER.test(v)) throw new Error(`"${v}" is a number with an exponent — numbers are plain decimals (1000, 0.5)`);
-  if (!isStoryName(v)) throw new Error(`"${v}" is not a value`);
-  if (ref.kind === 'quest' && !QUEST_STATES.includes(/** @type {any} */ (v))) throw new Error(`a quest is ${QUEST_STATES.join(', ')} — not "${v}"`);
+  if (EXP_NUMBER.test(v)) throw new Error(say('exponent', `"${v}" is a number with an exponent — numbers are plain decimals (1000, 0.5)`, { v }));
+  if (!isStoryName(v)) throw new Error(say('notValue', `"${v}" is not a value`, { v }));
+  if (ref.kind === 'quest' && !QUEST_STATES.includes(/** @type {any} */ (v))) throw new Error(say('questState', `a quest is ${QUEST_STATES.join(', ')} — not "${v}"`, { states: QUEST_STATES.join(', '), v }));
   if (text) {
-    if (cmp !== '=' && cmp !== '!=') throw new Error(`${t} can only be compared with = or !=`);
+    if (cmp !== '=' && cmp !== '!=') throw new Error(say('eqOnly', `${t} can only be compared with = or !=`, { ref: t }));
     return v;
   }
   // (a stage reference compares with a stage name, whatever it is called)
@@ -179,8 +204,8 @@ function rightValue(ref, t, cmp, v) {
   const low = v.toLowerCase();
   if (low === 'true') return 1;
   if (low === 'false') return 0;
-  if (GAME_REFS.includes(/** @type {any} */ (low))) throw new Error(`"${v}" is a game value — on the right of a comparison write a number, true / false or a variable name (two game values cannot be compared)`);
-  if (RESERVED_WORDS.has(low)) throw new Error(`"${v}" is a reserved word — on the right of a comparison write a number, true / false or a variable name`);
+  if (GAME_REFS.includes(/** @type {any} */ (low))) throw new Error(say('gameValueRight', `"${v}" is a game value — on the right of a comparison write a number, true / false or a variable name (two game values cannot be compared)`, { v }));
+  if (RESERVED_WORDS.has(low)) throw new Error(say('reservedRight', `"${v}" is a reserved word — on the right of a comparison write a number, true / false or a variable name`, { v }));
   return v;
 }
 
@@ -193,7 +218,7 @@ function rightValue(ref, t, cmp, v) {
 export function parseCondition(text) {
   const src = typeof text === 'string' ? text.trim() : '';
   if (!src) return { cond: { op: 'const', value: true }, error: '' };
-  if (src.length > 500) return { cond: { op: 'const', value: false }, error: 'condition longer than 500 characters' };
+  if (src.length > 500) return { cond: { op: 'const', value: false }, error: say('tooLong', 'condition longer than 500 characters', { max: 500 }) };
   const { tokens, error } = tokenize(src);
   if (error) return { cond: { op: 'const', value: false }, error };
   let k = 0;
@@ -216,7 +241,7 @@ export function parseCondition(text) {
   const parseNot = () => {
     if (word('not') || peek() === '!') {
       k++;
-      if (++depth > 32) throw new Error('nested too deeply');
+      if (++depth > 32) throw new Error(say('tooDeep', 'nested too deeply'));
       const a = parseNot();
       depth--;
       return { op: 'not', a };
@@ -226,23 +251,23 @@ export function parseCondition(text) {
   /** @returns {Cond} */
   const parseAtom = () => {
     const t = peek();
-    if (t === undefined) throw new Error('the condition ends too early');
+    if (t === undefined) throw new Error(say('endsEarly', 'the condition ends too early'));
     if (t === '(') {
       k++;
-      if (++depth > 32) throw new Error('nested too deeply');
+      if (++depth > 32) throw new Error(say('tooDeep', 'nested too deeply'));
       const a = parseOr();
       depth--;
-      if (peek() !== ')') throw new Error('a ")" is missing');
+      if (peek() !== ')') throw new Error(say('parenMissing', 'a ")" is missing'));
       k++;
       return a;
     }
-    if (t === ')' || CMP_OPS.has(t) || t === '&&' || t === '||' || t === '!') throw new Error(`unexpected "${t}"`);
-    if (word('and') || word('or')) throw new Error(`unexpected "${t}"`);
+    if (t === ')' || CMP_OPS.has(t) || t === '&&' || t === '||' || t === '!') throw new Error(say('unexpected', `unexpected "${t}"`, { t }));
+    if (word('and') || word('or')) throw new Error(say('unexpected', `unexpected "${t}"`, { t }));
     k++;
     const low = t.toLowerCase();
     if (low === 'true' || low === 'false') {
       const op = peek();
-      if (op !== undefined && CMP_OPS.has(op)) throw new Error(`"${t}" cannot be compared (it is always ${low})`);
+      if (op !== undefined && CMP_OPS.has(op)) throw new Error(say('cannotCompare', `"${t}" cannot be compared (it is always ${low})`, { t, low }));
       return { op: 'const', value: low === 'true' };
     }
     const ref = parseRef(t);
@@ -251,7 +276,7 @@ export function parseCondition(text) {
     if (op !== undefined && CMP_OPS.has(op)) {
       k++;
       const v = peek();
-      if (v === undefined || v === '(' || v === ')' || CMP_OPS.has(v) || v === '&&' || v === '||') throw new Error(`a value is missing after "${op}"`);
+      if (v === undefined || v === '(' || v === ')' || CMP_OPS.has(v) || v === '&&' || v === '||') throw new Error(say('valueMissing', `a value is missing after "${op}"`, { op }));
       k++;
       const cmp = /** @type {Cmp} */ (op === '==' ? '=' : op);
       return { op: 'cmp', ref, cmp, value: rightValue(ref, t, cmp, v) };
@@ -260,7 +285,7 @@ export function parseCondition(text) {
   };
   try {
     const cond = parseOr();
-    if (k < tokens.length) throw new Error(`unexpected "${tokens[k]}"`);
+    if (k < tokens.length) throw new Error(say('unexpected', `unexpected "${tokens[k]}"`, { t: tokens[k] }));
     return { cond, error: '' };
   } catch (err) {
     return { cond: { op: 'const', value: false }, error: err.message };

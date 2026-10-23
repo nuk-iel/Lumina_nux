@@ -19,6 +19,8 @@ import { parseStoryValues, storyHiddenIds, storyConditionCount } from '../story.
 import { rootRows } from '../textKeys.js';
 import { fillKeyView, copyText } from './keyView.js';
 import { ROOM_DEFAULTS, ROOM_WALL, ROOM_LOOK, ROOM_CAMERA, ROOM_BACKDROP, roomLookChanges, backdropKind } from '../rooms.js';
+import { tr, trn, commaList } from '../i18n.js';
+import { BRAND_NAME } from '../brand.js';
 
 /**
  * @import { EditorApp } from '../EditorApp.js'
@@ -29,6 +31,14 @@ const row = (label, control, hint = '') => h('div', { class: 'le-form-row' },
   h('label', { class: 'le-form-label' }, label),
   h('div', { class: 'le-form-control' }, control, hint ? h('div', { class: 'le-form-hint' }, hint) : null));
 
+/**
+ * A translated text whose `{slot}`s become the given nodes (a `<code>` part), never parsed as HTML.
+ * @param {string} text
+ * @param {Record<string, Node>} nodes
+ * @returns {(string|Node)[]}
+ */
+const withNodes = (text, nodes) => text.split(/\{([A-Za-z0-9_]+)\}/).map((s, i) => (i % 2 ? nodes[s] ?? `{${s}}` : s)).filter((x) => x !== '');
+
 const groundTiles = () => TILE_TYPES.filter((t) => t.category !== 'stairs').map((t) => ({ value: t.char, label: `${t.name}  “${t.char}”` }));
 /** Can a room's floor be this tile (walkable, not water, not void: the player starts on it)? @param {string} ch */
 const roomFloorTile = (ch) => { const d = TILE_TYPES.find((t) => t.char === ch)?.def; return !!d && d.walkable === true && !d.water && !d.void; };
@@ -38,11 +48,13 @@ const roomFloorTile = (ch) => { const d = TILE_TYPES.find((t) => t.char === ch)?
 // ---------------------------------------------------------------------------------------------
 
 const SIZE_PRESETS = [
-  { label: 'Small', w: 24, d: 18 }, { label: 'Medium', w: 32, d: 24 }, { label: 'Large', w: 48, d: 40 }, { label: 'Huge', w: 64, d: 64 },
+  { label: () => tr('dialogs.newLevel.presetSmall'), w: 24, d: 18 }, { label: () => tr('dialogs.newLevel.presetMedium'), w: 32, d: 24 },
+  { label: () => tr('dialogs.newLevel.presetLarge'), w: 48, d: 40 }, { label: () => tr('dialogs.newLevel.presetHuge'), w: 64, d: 64 },
 ];
 /** Room sizes (File › New › Room). */
 const ROOM_SIZE_PRESETS = [
-  { label: 'Small', w: 12, d: 10 }, { label: 'Room', w: ROOM_DEFAULTS.width, d: ROOM_DEFAULTS.depth }, { label: 'Hall', w: 24, d: 18 },
+  { label: () => tr('dialogs.newLevel.presetSmall'), w: 12, d: 10 }, { label: () => tr('dialogs.newLevel.presetRoom'), w: ROOM_DEFAULTS.width, d: ROOM_DEFAULTS.depth },
+  { label: () => tr('dialogs.newLevel.presetHall'), w: 24, d: 18 },
 ];
 /** What each kind of new level starts with (a kind switch resets these). */
 const NEW_KIND_DEFAULTS = {
@@ -70,10 +82,10 @@ export function newLevelDialog(app) {
   const wall = numberControl({ value: v.wall, min: 1, max: 12, step: 1, int: true, onChange: (x) => { v.wall = Math.max(1, Math.min(12, x ?? ROOM_DEFAULTS.wall)); upd(); } });
   const summary = h('div', { class: 'le-form-summary' });
   // (rows the kind switch relabels or hides)
-  const groundRow = row('Ground', h('div', { class: 'le-inline' }, h('span', { class: 'le-swatch is-static' }, sw), fill.el));
-  const levelRow = row('Ground level', lvl.el, '');
-  const borderRow = row('Forest border', border.el, 'Blocked forest tiles around the edge; the game scatters trees on them.');
-  const wallRow = row('Wall height', wall.el, 'Rock walls on the north, west and east, this many levels above the floor (5 = 2.5 units); a low south wall with a door in its middle — the camera looks north over it.');
+  const groundRow = row(tr('dialogs.newLevel.ground'), h('div', { class: 'le-inline' }, h('span', { class: 'le-swatch is-static' }, sw), fill.el));
+  const levelRow = row(tr('dialogs.newLevel.groundLevel'), lvl.el, '');
+  const borderRow = row(tr('dialogs.newLevel.forestBorder'), border.el, tr('dialogs.newLevel.forestBorderHint'));
+  const wallRow = row(tr('dialogs.newLevel.wallHeight'), wall.el, tr('dialogs.newLevel.wallHeightHint'));
   const relabel = (r, label, hint) => {
     r.querySelector('.le-form-label').textContent = label;
     const hintEl = r.querySelector('.le-form-hint');
@@ -83,7 +95,7 @@ export function newLevelDialog(app) {
   function showPresets() {
     clear(presets).append(...(v.kind === 'room' ? ROOM_SIZE_PRESETS : SIZE_PRESETS).map((p) => h('button', {
       class: 'le-chip-btn', type: 'button', onClick: () => { v.width = p.w; v.depth = p.d; w.set(p.w); d.set(p.d); upd(); },
-    }, `${p.label} ${p.w}×${p.d}`)));
+    }, `${p.label()} ${p.w}×${p.d}`)));
   }
   function setKind(k) {
     v.kind = k;
@@ -92,8 +104,8 @@ export function newLevelDialog(app) {
     // (a room's floor holds the player start: no water, void or blocked ground on offer)
     for (const o of fill.el.querySelectorAll('option')) o.disabled = room && !roomFloorTile(o.value);
     w.set(v.width); d.set(v.depth); fill.set(v.fill); lvl.set(v.level);
-    relabel(groundRow, room ? 'Floor' : 'Ground', '');
-    relabel(levelRow, room ? 'Floor level' : 'Ground level', room ? 'Height level of the floor (level 1 = 0.5 units).' : 'Leave room below for rivers and ponds (level 2 = 1.0 units).');
+    relabel(groundRow, room ? tr('dialogs.newLevel.floor') : tr('dialogs.newLevel.ground'), '');
+    relabel(levelRow, room ? tr('dialogs.newLevel.floorLevel') : tr('dialogs.newLevel.groundLevel'), room ? tr('dialogs.newLevel.floorLevelHint') : tr('dialogs.newLevel.groundLevelHint'));
     borderRow.hidden = room;
     wallRow.hidden = !room;
     showPresets();
@@ -104,32 +116,32 @@ export function newLevelDialog(app) {
     if (v.kind === 'room') {
       const fw = Math.max(0, v.width - 2 * ROOM_WALL);
       const fd = Math.max(0, v.depth - ROOM_WALL - 1);
-      summary.textContent = `${v.width} × ${v.depth} tiles · a ${fw} × ${fd} floor inside rock walls, a door in the south wall · an interior: no sky, weather, forest border or outer scenery; the clock stopped, no minimap, a closer camera (Level settings › Environment)`;
+      summary.textContent = tr('dialogs.newLevel.summaryRoom', { w: v.width, d: v.depth, fw, fd });
       return;
     }
     const inner = Math.max(0, v.width - v.border * 2) * Math.max(0, v.depth - v.border * 2);
     summary.textContent = v.border > 0
-      ? `${v.width} × ${v.depth} tiles · ${inner} playable tiles inside a ${v.border}-tile forest border`
-      : `${v.width} × ${v.depth} tiles · no border: the player can walk to the edge of the map`;
+      ? tr('dialogs.newLevel.summaryBorder', { w: v.width, d: v.depth, inner, border: v.border })
+      : tr('dialogs.newLevel.summaryNoBorder', { w: v.width, d: v.depth });
   }
   const kind = segmented({
-    options: [{ value: 'level', label: 'Outdoor level' }, { value: 'room', label: 'Room (interior)' }],
+    options: [{ value: 'level', label: tr('dialogs.newLevel.kindLevel') }, { value: 'room', label: tr('dialogs.newLevel.kindRoom') }],
     value: v.kind, onChange: setKind, className: 'le-tabs le-new-kind',
   });
   setKind('level');
   return showDialog({
-    title: 'New level', icon: ICONS.newFile, width: 520,
+    title: tr('dialogs.newLevel.title'), icon: ICONS.newFile, width: 520,
     content: [
       kind.el,
-      row('Name', name.el),
-      row('Size', h('div', null, h('div', { class: 'le-inline' }, w.el, h('span', { class: 'le-times' }, '×'), d.el), presets), `${MIN_SIZE}–${MAX_SIZE} tiles each way`),
+      row(tr('dialogs.name'), name.el),
+      row(tr('dialogs.newLevel.size'), h('div', null, h('div', { class: 'le-inline' }, w.el, h('span', { class: 'le-times' }, '×'), d.el), presets), tr('dialogs.newLevel.sizeHint', { min: MIN_SIZE, max: MAX_SIZE })),
       groundRow,
       levelRow,
       borderRow,
       wallRow,
       summary,
     ],
-    buttons: [{ label: 'Cancel', value: null }, { label: 'Create', primary: true, onClick: () => { v.name = name.input.value.trim() || 'Untitled'; } }],
+    buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: null }, { key: 'Create', label: tr('common.create'), primary: true, onClick: () => { v.name = name.input.value.trim() || 'Untitled'; } }],
   }).result.then((r) => (r === 'Create' ? { ...v } : null));
 }
 
@@ -150,9 +162,9 @@ export function openLevelDialog(app, { tab = null } = {}) {
   const list = h('div', { class: 'le-file-list le-scroll', role: 'listbox' });
   const tabs = segmented({
     options: [
-      { value: 'project', label: 'Project folder', icon: ICONS.folder },
-      { value: 'local', label: 'This browser', icon: ICONS.browser },
-      { value: 'file', label: 'File on disk', icon: ICONS.file },
+      { value: 'project', label: tr('dialogs.projectFolder'), icon: ICONS.folder },
+      { value: 'local', label: tr('dialogs.thisBrowser'), icon: ICONS.browser },
+      { value: 'file', label: tr('dialogs.open.fileOnDisk'), icon: ICONS.file },
     ],
     value: current, onChange: (x) => { current = x; fill(); }, className: 'le-tabs',
   });
@@ -167,7 +179,7 @@ export function openLevelDialog(app, { tab = null } = {}) {
    */
   const item = ({ title, sub, meta, onOpen, onDelete, active }) => {
     const del = onDelete ? h('button', {
-      class: 'le-icon-btn is-danger', type: 'button', title: 'Delete…',
+      class: 'le-icon-btn is-danger', type: 'button', title: tr('dialogs.open.deleteEntry'),
       onClick: async (e) => { e.stopPropagation(); if (await onDelete()) fill(); },
     }, icon(ICONS.trash)) : null;
     return h('div', {
@@ -178,7 +190,7 @@ export function openLevelDialog(app, { tab = null } = {}) {
     icon(ICONS.map, 'le-icon le-file-icon'),
     h('div', { class: 'le-file-main' }, h('div', { class: 'le-file-title' }, title), h('div', { class: 'le-file-sub' }, sub)),
     h('div', { class: 'le-file-meta' }, meta),
-    h('button', { class: 'le-btn is-small', type: 'button', onClick: (e) => { e.stopPropagation(); onOpen(); } }, 'Open'),
+    h('button', { class: 'le-btn is-small', type: 'button', onClick: (e) => { e.stopPropagation(); onOpen(); } }, tr('common.open')),
     del);
   };
   let selectedOpen = null;
@@ -196,19 +208,21 @@ export function openLevelDialog(app, { tab = null } = {}) {
     clear(list);
     if (current === 'project') {
       if (!app.projectApi) {
-        list.appendChild(h('div', { class: 'le-empty' }, icon(ICONS.info), h('div', null, 'The project folder is only available while the dev server runs (', h('code', null, 'npm run dev'), '). Published levels can still be opened by name with ', h('code', null, 'editor.html?open=<name>'), '.')));
+        list.appendChild(h('div', { class: 'le-empty' }, icon(ICONS.info), h('div', null, ...withNodes(tr('dialogs.open.noProjectApi'), {
+          cmd: h('code', null, 'npm run dev'), url: h('code', null, 'editor.html?open=<name>'),
+        }))));
         return;
       }
-      list.appendChild(h('div', { class: 'le-empty' }, 'Loading…'));
+      list.appendChild(h('div', { class: 'le-empty' }, tr('dialogs.open.loading')));
       let levels = [];
       let campaigns = [];
       try {
         levels = await listProjectLevels();
         // (an older dev server without the campaign API: no campaigns)
         campaigns = await listProjectCampaigns().catch(() => []);
-      } catch (e) { clear(list).appendChild(h('div', { class: 'le-empty is-error' }, `Could not list levels: ${e.message}`)); return; }
+      } catch (e) { clear(list).appendChild(h('div', { class: 'le-empty is-error' }, tr('dialogs.open.listFailed', { error: e.message }))); return; }
       clear(list);
-      if (!levels.length) list.appendChild(h('div', { class: 'le-empty' }, 'No levels in public/levels/ yet. Use File › Save As… to save one there.'));
+      if (!levels.length) list.appendChild(h('div', { class: 'le-empty' }, tr('dialogs.open.noProjectLevels')));
       const ref = app.state.fileRef;
       /** One project level row (`campaign`: a campaign's own level). */
       const levelItem = (l, campaign = '') => item({
@@ -216,48 +230,60 @@ export function openLevelDialog(app, { tab = null } = {}) {
         active: ref.kind === 'project' && ref.name === l.name && (ref.campaign ?? '') === campaign,
         onOpen: () => pick(campaign ? { kind: 'project', name: l.name, campaign } : { kind: 'project', name: l.name }),
         onDelete: async () => {
-          const ok = await confirmDialog({ title: 'Delete level file?', message: `Permanently delete public/${l.file} from the project folder? This cannot be undone.`, danger: true, buttons: [{ label: 'Cancel', value: false }, { label: 'Delete file', value: true, danger: true }] });
+          const ok = await confirmDialog({
+            title: tr('dialogs.open.deleteFileTitle'), message: tr('dialogs.open.deleteFileMessage', { file: l.file }), danger: true,
+            buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: false }, { key: 'Delete file', label: tr('dialogs.open.deleteFile'), value: true, danger: true }],
+          });
           if (!ok) return false;
-          try { await deleteProjectLevel(l.name, { campaign }); app.state.notify(`Deleted public/${l.file}`); } catch (e) { app.state.notify(`Delete failed: ${e.message}`); }
+          try { await deleteProjectLevel(l.name, { campaign }); app.state.notify(tr('dialogs.open.deleted', { file: l.file })); } catch (e) { app.state.notify(tr('dialogs.open.deleteFailed', { error: e.message }), { error: true }); }
           return true;
         },
       });
       for (const l of levels) list.appendChild(levelItem(l));
       // campaigns (docs/specs/CAMPAIGN_FORMAT.md): each one's own levels
       for (const c of campaigns) {
-        list.appendChild(h('div', { class: 'le-file-group' }, `Campaign · ${c.title}`, h('span', { class: 'le-dim' }, ` — public/campaigns/${c.name}/levels/`)));
-        if (!c.levels.length) list.appendChild(h('div', { class: 'le-empty' }, 'No levels yet.'));
+        list.appendChild(h('div', { class: 'le-file-group' }, tr('dialogs.open.campaignGroup', { title: c.title }), h('span', { class: 'le-dim' }, ` — public/campaigns/${c.name}/levels/`)));
+        if (!c.levels.length) list.appendChild(h('div', { class: 'le-empty' }, tr('dialogs.open.noCampaignLevels')));
         for (const l of c.levels) list.appendChild(levelItem(l, c.name));
       }
     } else if (current === 'local') {
       const levels = listLocalLevels();
       const recovered = listRecovered();
       if (recovered.length) {
-        list.appendChild(h('div', { class: 'le-file-group' }, 'Recovered unsaved work', h('span', { class: 'le-dim' }, ' — from editor sessions that closed or were replaced before saving')));
+        list.appendChild(h('div', { class: 'le-file-group' }, tr('dialogs.open.recoveredGroup'), h('span', { class: 'le-dim' }, tr('dialogs.open.recoveredGroupNote'))));
         for (const e of recovered) {
+          const source = e.fileRef?.kind === 'project' ? `public/${projectLevelPath(e.fileRef.name, { campaign: e.fileRef.campaign })}`
+            : e.fileRef?.kind === 'local' ? tr('dialogs.browserSlot', { name: e.fileRef.name })
+              : e.fileRef?.kind === 'file' ? e.fileRef.name : null;
           list.appendChild(item({
-            title: e.name || 'Untitled',
-            sub: `recovered copy${e.fileRef?.kind === 'project' ? ` of public/${projectLevelPath(e.fileRef.name, { campaign: e.fileRef.campaign })}` : e.fileRef?.kind === 'local' ? ` of browser slot “${e.fileRef.name}”` : e.fileRef?.kind === 'file' ? ` of ${e.fileRef.name}` : ''}${e.exported ? ' (was downloaded)' : ''}`,
+            title: e.name || tr('common.untitled'),
+            sub: `${source != null ? tr('dialogs.open.recoveredOf', { source }) : tr('dialogs.open.recovered')}${e.exported ? tr('dialogs.open.wasDownloaded') : ''}`,
             meta: [`${e.width ?? '?'}×${e.depth ?? '?'}`, formatBytes(recoveredSize(e.id)), formatTime(e.savedAt)].filter(Boolean).join(' · '),
             onOpen: () => pick({ kind: 'recovered', name: e.id }),
             onDelete: async () => {
-              const ok = await confirmDialog({ title: 'Delete recovered copy?', message: `Delete the recovered copy of “${e.name || 'Untitled'}”? This cannot be undone.`, danger: true, buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, danger: true }] });
+              const ok = await confirmDialog({
+                title: tr('dialogs.open.deleteRecoveredTitle'), message: tr('dialogs.open.deleteRecoveredMessage', { name: e.name || tr('common.untitled') }), danger: true,
+                buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: false }, { key: 'Delete', label: tr('common.delete'), value: true, danger: true }],
+              });
               if (!ok) return false;
               deleteRecovered(e.id);
               return true;
             },
           }));
         }
-        if (levels.length) list.appendChild(h('div', { class: 'le-file-group' }, 'Saved in this browser'));
+        if (levels.length) list.appendChild(h('div', { class: 'le-file-group' }, tr('dialogs.open.savedGroup')));
       }
-      if (!levels.length && !recovered.length) list.appendChild(h('div', { class: 'le-empty' }, 'No levels saved in this browser yet.'));
+      if (!levels.length && !recovered.length) list.appendChild(h('div', { class: 'le-empty' }, tr('dialogs.open.noLocalLevels')));
       for (const l of levels) {
         list.appendChild(item({
-          title: l.name, sub: `browser slot “${l.slot}”`, meta: [`${l.width}×${l.depth}`, localSize(l.slot), formatTime(l.savedAt)].filter(Boolean).join(' · '),
+          title: l.name, sub: tr('dialogs.browserSlot', { name: l.slot }), meta: [`${l.width}×${l.depth}`, localSize(l.slot), formatTime(l.savedAt)].filter(Boolean).join(' · '),
           active: app.state.fileRef.kind === 'local' && app.state.fileRef.name === l.slot,
           onOpen: () => pick({ kind: 'local', name: l.slot }),
           onDelete: async () => {
-            const ok = await confirmDialog({ title: 'Delete saved level?', message: `Delete “${l.name}” from this browser's storage? This cannot be undone.`, danger: true, buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, danger: true }] });
+            const ok = await confirmDialog({
+              title: tr('dialogs.open.deleteLocalTitle'), message: tr('dialogs.open.deleteLocalMessage', { name: l.name }), danger: true,
+              buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: false }, { key: 'Delete', label: tr('common.delete'), value: true, danger: true }],
+            });
             if (!ok) return false;
             deleteLocalLevel(l.slot);
             return true;
@@ -267,17 +293,17 @@ export function openLevelDialog(app, { tab = null } = {}) {
     } else {
       const drop = h('div', { class: 'le-dropzone' },
         icon(ICONS.upload, 'le-icon le-dropzone-icon'),
-        h('div', { class: 'le-dropzone-title' }, 'Open a level file'),
-        h('div', { class: 'le-dropzone-text' }, 'Choose a .json level exported from the editor, or drop it anywhere on the editor window.'),
-        h('button', { class: 'le-btn is-primary', type: 'button', onClick: () => pick({ kind: 'file' }) }, icon(ICONS.open), 'Choose file…'));
+        h('div', { class: 'le-dropzone-title' }, tr('dialogs.open.dropTitle')),
+        h('div', { class: 'le-dropzone-text' }, tr('dialogs.open.dropText')),
+        h('button', { class: 'le-btn is-primary', type: 'button', onClick: () => pick({ kind: 'file' }) }, icon(ICONS.open), tr('dialogs.open.chooseFile')));
       list.appendChild(drop);
     }
   }
   fill();
   dlg = showDialog({
-    title: 'Open level', icon: ICONS.open, width: 680, className: 'is-open-dialog',
+    title: tr('dialogs.open.title'), icon: ICONS.open, width: 680, className: 'is-open-dialog',
     content: [tabs.el, list],
-    buttons: [{ label: 'Cancel', value: null }, { label: 'Open', primary: true, disabled: true, onClick: () => { if (selectedOpen) { selectedOpen(); } return false; } }],
+    buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: null }, { key: 'Open', label: tr('common.open'), primary: true, disabled: true, onClick: () => { if (selectedOpen) { selectedOpen(); } return false; } }],
   });
   return dlg.result.then(() => choice);
 }
@@ -296,7 +322,7 @@ function localSize(slot) {
 // Save As
 // ---------------------------------------------------------------------------------------------
 
-/** "my-river-village" → "My River Village". */
+/** "my-river-village" → "My River Village" (a default level name derived from the file name: data, not UI text). */
 const titleFromSlug = (s) => String(s).split(/[-_\s]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
 
 /**
@@ -323,7 +349,7 @@ export function saveAsDialog(app, { askName = false } = {}) {
   // the display name (title screen, banner): asked while the level is still "Untitled"
   let levelNameTouched = false;
   v.levelName = askName ? (ref.kind === 'new' && v.name === 'untitled' ? '' : titleFromSlug(v.name)) : L.name;
-  const levelName = askName ? textControl({ value: v.levelName, placeholder: 'e.g. Riverside Village', maxLength: 80, onInput: (x) => { v.levelName = x; levelNameTouched = true; upd(); }, onChange: (x) => { v.levelName = x; levelNameTouched = true; upd(); } }) : null;
+  const levelName = askName ? textControl({ value: v.levelName, placeholder: tr('dialogs.exampleName'), maxLength: 80, onInput: (x) => { v.levelName = x; levelNameTouched = true; upd(); }, onChange: (x) => { v.levelName = x; levelNameTouched = true; upd(); } }) : null;
   const name = textControl({
     value: v.name, maxLength: 60,
     onInput: (x) => { v.name = x; if (levelName && !levelNameTouched) { v.levelName = titleFromSlug(slugify(x) === 'untitled' ? '' : x); levelName.set(v.levelName); } upd(); },
@@ -338,10 +364,10 @@ export function saveAsDialog(app, { askName = false } = {}) {
    */
   const dests = [
     campaign
-      ? { value: 'project', title: 'Campaign folder', text: `public/campaigns/${campaign}/levels/ — beside the campaign's other levels`, icon: ICONS.folder, disabled: !app.projectApi, off: 'Needs the dev server (npm run dev)' }
-      : { value: 'project', title: 'Project folder', text: 'public/levels/ — ships with the game; playable at ?\u2060level=<name>', icon: ICONS.folder, disabled: !app.projectApi, off: 'Needs the dev server (npm run dev)' },
-    { value: 'local', title: 'This browser', text: 'Browser storage — quick, private to this browser', icon: ICONS.browser },
-    { value: 'download', title: 'Download file', text: 'A .level.json file you can share or keep in version control', icon: ICONS.download },
+      ? { value: 'project', title: tr('dialogs.saveAs.campaignFolder'), text: tr('dialogs.saveAs.campaignFolderText', { campaign }), icon: ICONS.folder, disabled: !app.projectApi, off: tr('dialogs.saveAs.needsDevServer') }
+      : { value: 'project', title: tr('dialogs.projectFolder'), text: tr('dialogs.saveAs.projectFolderText'), icon: ICONS.folder, disabled: !app.projectApi, off: tr('dialogs.saveAs.needsDevServer') },
+    { value: 'local', title: tr('dialogs.thisBrowser'), text: tr('dialogs.saveAs.browserText'), icon: ICONS.browser },
+    { value: 'download', title: tr('dialogs.saveAs.download'), text: tr('dialogs.saveAs.downloadText'), icon: ICONS.download },
   ];
   const cards = h('div', { class: 'le-dest-cards', role: 'radiogroup' });
   const cardEls = new Map();
@@ -356,19 +382,21 @@ export function saveAsDialog(app, { askName = false } = {}) {
   function upd() {
     for (const [k, c] of cardEls) { c.classList.toggle('is-active', k === v.dest); c.setAttribute('aria-checked', k === v.dest ? 'true' : 'false'); }
     const slug = slugify(v.name || v.levelName || L.name);
-    target.textContent = v.dest === 'project' ? `→ public/${projectLevelPath(slug, { campaign })}` : v.dest === 'local' ? `→ browser slot “${slug}”` : `→ ${slug}.level.json (download)`;
-    const display = (levelName ? v.levelName : L.name).trim() || 'Untitled';
-    nameHint.textContent = slug !== slugify(display) ? `The game shows the level as “${display}”; the file is named “${slug}”.` : 'Letters, digits and dashes.';
+    target.textContent = v.dest === 'project' ? `→ public/${projectLevelPath(slug, { campaign })}` : v.dest === 'local' ? `→ ${tr('dialogs.browserSlot', { name: slug })}` : tr('dialogs.saveAs.targetDownload', { slug });
+    // (the level name the game falls back to is the English default: the comparison uses it)
+    const own = (levelName ? v.levelName : L.name).trim();
+    nameHint.textContent = slug !== slugify(own || 'Untitled')
+      ? tr('dialogs.saveAs.nameDiffers', { display: own || tr('common.untitled'), slug }) : tr('dialogs.saveAs.nameHint');
   }
   upd();
   return showDialog({
-    title: 'Save level as', icon: ICONS.saveAs, width: 600,
+    title: tr('dialogs.saveAs.title'), icon: ICONS.saveAs, width: 600,
     content: [
-      row('File name', h('div', null, name.el, nameHint)),
-      levelName ? row('Level name', levelName.el, 'Shown on the title screen and in the banner; follows the file name until you edit it (Level settings can change it later).') : null,
-      row('Save to', cards), target,
+      row(tr('dialogs.saveAs.fileName'), h('div', null, name.el, nameHint)),
+      levelName ? row(tr('dialogs.saveAs.levelName'), levelName.el, tr('dialogs.saveAs.levelNameHint')) : null,
+      row(tr('dialogs.saveAs.saveTo'), cards), target,
     ],
-    buttons: [{ label: 'Cancel', value: null }, { label: 'Save', primary: true }],
+    buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: null }, { key: 'Save', label: tr('common.save'), primary: true }],
   }).result.then((r) => {
     if (r !== 'Save') return null;
     const out = { name: slugify(name.input.value.trim() || v.name || v.levelName || L.name), dest: v.dest };
@@ -414,27 +442,27 @@ export function levelSettingsDialog(app) {
   v.backdropColor = bdColor0;
   const ctl = {
     clock: boolControl({ value: !!v.env.clock, onChange: (x) => { v.env.clock = x; updRoom(); } }),
-    weather: selectControl({ value: v.env.weather, options: [{ value: 'clear', label: 'Clear' }, { value: 'rain', label: 'Rain' }, { value: 'snow', label: 'Snow' }], onChange: (x) => { v.env.weather = x; } }),
-    border: selectControl({ value: v.env.border, options: [{ value: 'forest', label: 'Forest (trees on blocked grass)' }, { value: 'none', label: 'None' }], onChange: (x) => { v.env.border = x; updRoom(); } }),
+    weather: selectControl({ value: v.env.weather, options: [{ value: 'clear', label: tr('dialogs.settings.weatherClear') }, { value: 'rain', label: tr('dialogs.settings.weatherRain') }, { value: 'snow', label: tr('dialogs.settings.weatherSnow') }], onChange: (x) => { v.env.weather = x; } }),
+    border: selectControl({ value: v.env.border, options: [{ value: 'forest', label: tr('dialogs.settings.borderForest') }, { value: 'none', label: tr('dialogs.settings.borderNone') }], onChange: (x) => { v.env.border = x; updRoom(); } }),
     outerScenery: boolControl({ value: !!v.env.outerScenery, onChange: (x) => { v.env.outerScenery = x; updRoom(); } }),
     godRays: boolControl({ value: !!v.env.godRays, onChange: (x) => { v.env.godRays = x; updRoom(); } }),
     minimap: boolControl({ value: v.env.minimap !== false, onChange: (x) => { v.env.minimap = x; updRoom(); } }),
     backdrop: selectControl({
       value: bk0,
       options: [
-        { value: 'sky', label: 'None (the sky)' },
-        { value: 'void', label: 'Void (black)' },
-        { value: 'color', label: 'Colour' },
+        { value: 'sky', label: tr('dialogs.settings.backdropSky') },
+        { value: 'void', label: tr('dialogs.settings.backdropVoid') },
+        { value: 'color', label: tr('dialogs.settings.backdropColor') },
         // (a value the game cannot read stays as it is until another choice is made)
-        ...(bk0 === 'invalid' ? [{ value: 'invalid', label: `“${String(env.backdrop).slice(0, 24)}” (not a colour: the sky is shown)` }] : []),
+        ...(bk0 === 'invalid' ? [{ value: 'invalid', label: tr('dialogs.settings.backdropInvalid', { value: String(env.backdrop).slice(0, 24) }) }] : []),
       ],
       onChange: (x) => { v.backdrop = x; updRoom(); },
     }),
     backdropColor: colorControl({ value: bdColor0, onChange: (x) => { v.backdropColor = x; } }),
-    interior: boolControl({ value: v.interior, label: 'This level is a room', onChange: (x) => { v.interior = x; roomSet = false; if (!x) undoRoomLook(); updRoom(); } }),
+    interior: boolControl({ value: v.interior, label: tr('dialogs.settings.isRoom'), onChange: (x) => { v.interior = x; roomSet = false; if (!x) undoRoomLook(); updRoom(); } }),
   };
-  const camDist = numberControl({ value: v.camDistance, slider: false, nullable: true, step: 1, min: 12, max: 60, placeholder: 'auto (30)', onChange: (x) => { v.camDistance = x; updRoom(); } });
-  const camPitch = numberControl({ value: v.camPitch, slider: false, nullable: true, step: 1, min: 10, max: 80, placeholder: 'auto (32°)', suffix: '°', onChange: (x) => { v.camPitch = x; updRoom(); } });
+  const camDist = numberControl({ value: v.camDistance, slider: false, nullable: true, step: 1, min: 12, max: 60, placeholder: tr('dialogs.settings.auto', { value: '30' }), onChange: (x) => { v.camDistance = x; updRoom(); } });
+  const camPitch = numberControl({ value: v.camPitch, slider: false, nullable: true, step: 1, min: 10, max: 80, placeholder: tr('dialogs.settings.auto', { value: '32°' }), suffix: '°', onChange: (x) => { v.camPitch = x; updRoom(); } });
   const cameraAuto = () => v.camDistance == null && v.camPitch == null && !cam?.bounds;
   /** The environment as the dialog would write it (for the room-look test). */
   const shownEnv = () => ({ ...v.env, backdrop: v.backdrop === 'void' ? 'void' : v.backdrop === 'color' ? v.backdropColor : v.backdrop === 'invalid' ? env.backdrop : undefined });
@@ -493,22 +521,22 @@ export function levelSettingsDialog(app) {
   let roomSet = false;
   /** The room look's button (Enter presses it, not the dialog's Apply). */
   const roomLookButton = () => {
-    const btn = h('button', { class: 'le-btn is-small le-room-look-btn', type: 'button', onClick: useRoomLook }, 'Use the room look');
+    const btn = h('button', { class: 'le-btn is-small le-room-look-btn', type: 'button', onClick: useRoomLook }, tr('dialogs.settings.useRoomLook'));
     btn.dataset.keepsEnter = '1';
     return btn;
   };
   const roomOffer = h('div', { class: 'le-form-summary le-room-offer', role: 'status' });
-  const roomNote = () => h('div', { class: 'le-form-hint le-room-note' }, 'Not shown in a room (kept for when the level is outdoors again; “Use the room look” sets the room’s own).');
+  const roomNote = () => h('div', { class: 'le-form-hint le-room-note' }, tr('dialogs.settings.roomNote'));
   const ignoredRow = (label, control, hint = '') => {
     const r = row(label, control, hint);
     r.querySelector('.le-form-control').appendChild(roomNote());
     return r;
   };
   const ignoredRows = [
-    ignoredRow('Weather', ctl.weather.el, 'The 3D preview shows its grey light and lanterns; the rain / snow, haze and snow cover with View › 3D: particles & god rays.'),
-    ignoredRow('Map border', ctl.border.el),
-    ignoredRow('Outer scenery', ctl.outerScenery.el, 'Fogged hills and trees around the map.'),
-    ignoredRow('God rays', ctl.godRays.el),
+    ignoredRow(tr('dialogs.settings.weather'), ctl.weather.el, tr('dialogs.settings.weatherHint')),
+    ignoredRow(tr('dialogs.settings.mapBorder'), ctl.border.el),
+    ignoredRow(tr('dialogs.settings.outerScenery'), ctl.outerScenery.el, tr('dialogs.settings.outerSceneryHint')),
+    ignoredRow(tr('dialogs.settings.godRays'), ctl.godRays.el),
   ];
   function updRoom() {
     for (const r of ignoredRows) r.classList.toggle('is-room-ignored', v.interior);
@@ -517,12 +545,12 @@ export function levelSettingsDialog(app) {
     roomOffer.hidden = !v.interior || (!changes.length && !roomSet);
     if (roomOffer.hidden) return;
     if (!changes.length) {
-      clear(roomOffer).append('The room look is set: no border, outer scenery or god rays, a backdrop instead of the sky, no minimap, the clock stopped',
-        lookCamera ? ', a closer camera.' : '.', ' Apply saves it with the other settings, as one undo step.');
+      clear(roomOffer).append(tr('dialogs.settings.roomLookSet', { camera: lookCamera ? tr('dialogs.settings.roomLookCamera') : '' }));
       return;
     }
+    const list = commaList(changes.map((c) => c.label));
     clear(roomOffer).append(
-      h('div', null, `${interior0 ? 'Part of the room look is missing' : 'This level is set up for the outdoors'}. The room look sets ${changes.map((c) => c.label).join(', ')}.`),
+      h('div', null, interior0 ? tr('dialogs.settings.roomLookMissing', { changes: list }) : tr('dialogs.settings.roomLookOutdoors', { changes: list })),
       roomLookButton(),
     );
   }
@@ -532,58 +560,62 @@ export function levelSettingsDialog(app) {
   const subtitleKeys = h('div', { class: 'le-text-keys is-form', dataset: { field: 'subtitle' } });
   fillKeyView(subtitleKeys, rootRows(L).filter((r) => r.field === 'subtitle'), {
     pages: false, open: true, onToggle: () => {},
-    onCopy: (key) => { copyText(key).then((ok) => st.notify(ok ? `Copied the text key ${key}` : `Text key ${key} (the clipboard is not available: select it to copy)`)); },
+    onCopy: (key) => { copyText(key).then((ok) => st.notify(ok ? tr('dialogs.settings.keyCopied', { key }) : tr('dialogs.settings.keyNoClipboard', { key }))); },
   });
   const panes = {
     general: h('div', { class: 'le-form' },
-      row('Name', text('name', { maxLength: 80 }), 'Shown on the title screen and in the banner.'),
-      row('Subtitle', [text('subtitle', { placeholder: 'e.g. Riverside Village' }), subtitleKeys]),
-      row('Author', text('author')),
-      row('Description', textControl({ value: v.description, multiline: true, rows: 4, onChange: (x) => { v.description = x; }, onInput: (x) => { v.description = x; } }).el)),
+      row(tr('dialogs.name'), text('name', { maxLength: 80 }), tr('dialogs.settings.nameHint')),
+      row(tr('dialogs.settings.subtitle'), [text('subtitle', { placeholder: tr('dialogs.exampleName') }), subtitleKeys]),
+      row(tr('dialogs.settings.author'), text('author')),
+      row(tr('dialogs.settings.description'), textControl({ value: v.description, multiline: true, rows: 4, onChange: (x) => { v.description = x; }, onInput: (x) => { v.description = x; } }).el)),
     environment: h('div', { class: 'le-form' },
-      row('Interior (room)', h('div', null, ctl.interior.el, roomOffer), 'A house’s floor, a cellar: inside, the game shows no forest border, outer scenery, god rays or weather (a campaign’s weather goes on outside), and a campaign keeps the level the player came from while they are in the room. The 3D preview shows it the same way.'),
-      row('Start time', numberControl({ value: v.env.timeOfDay, min: 0, max: 24, step: 0.25, suffix: 'h', onChange: (x) => { v.env.timeOfDay = x ?? 12; } }).el, '17.2 = golden hour, 21+ = night. The 3D preview shows this hour (sun slider in the 3D view bar).'),
-      row('Clock runs', ctl.clock.el, 'Time advances while playing. Off: the level keeps its start time (a room usually stops it).'),
+      row(tr('dialogs.settings.interior'), h('div', null, ctl.interior.el, roomOffer), tr('dialogs.settings.interiorHint')),
+      row(tr('dialogs.settings.startTime'), numberControl({ value: v.env.timeOfDay, min: 0, max: 24, step: 0.25, suffix: 'h', onChange: (x) => { v.env.timeOfDay = x ?? 12; } }).el, tr('dialogs.settings.startTimeHint')),
+      row(tr('dialogs.settings.clock'), ctl.clock.el, tr('dialogs.settings.clockHint')),
       ...ignoredRows,
-      row('Backdrop', h('div', { class: 'le-inline' }, ctl.backdrop.el, ctl.backdropColor.el), 'Instead of the sky: the background and the fog in one colour — for rooms, cellars and caves (Void = black). The 3D preview shows it.'),
-      row('Dust motes', sw('dust')),
-      row('Music', sw('music'), 'Start the music when the game starts.'),
-      row('Minimap', ctl.minimap.el, 'The HUD minimap under the clock (N / Tab opens the world map either way); a room usually hides it.'),
-      row('Combat', selectControl({
+      row(tr('dialogs.settings.backdrop'), h('div', { class: 'le-inline' }, ctl.backdrop.el, ctl.backdropColor.el), tr('dialogs.settings.backdropHint')),
+      row(tr('dialogs.settings.dust'), sw('dust')),
+      row(tr('dialogs.settings.music'), sw('music'), tr('dialogs.settings.musicHint')),
+      row(tr('dialogs.settings.minimap'), ctl.minimap.el, tr('dialogs.settings.minimapHint')),
+      row(tr('dialogs.settings.combat'), selectControl({
         value: v.combat,
         options: [
-          { value: 'auto', label: `Auto (${enemyGroups ? 'on: the level has enemies' : 'off: no enemies placed'})` },
-          { value: 'on', label: 'On' },
-          { value: 'off', label: 'Off (peaceful)' },
+          { value: 'auto', label: enemyGroups ? tr('dialogs.settings.combatAutoOn') : tr('dialogs.settings.combatAutoOff') },
+          { value: 'on', label: tr('dialogs.settings.combatOn') },
+          { value: 'off', label: tr('dialogs.settings.combatOff') },
         ],
         onChange: (x) => { v.combat = x; },
-      }).el, 'Auto turns combat on when the level has an enemy group. On gives the player the sword, skills and draughts without enemies; Off keeps the level peaceful — enemies are not spawned, chests and waystones are only examined.')),
+      }).el, tr('dialogs.settings.combatHint'))),
     camera: h('div', { class: 'le-form' },
-      row('Distance', camDist.el, `Blank = the default diorama distance. A room looks closer (${ROOM_CAMERA.distance}).`),
-      row('Pitch', camPitch.el),
-      row('High ground', boolControl({ value: v.hgOn, label: 'Steeper camera on high ground', onChange: (x) => { v.hgOn = x; } }).el),
-      row('…above height (world units)', num(() => v.hgMinY, (x) => { v.hgMinY = x ?? 3; }, { step: 0.5, min: 0, max: 20 }), 'World height (level × 0.5) where the tilt starts.'),
-      row('…pitch', num(() => v.hgPitch, (x) => { v.hgPitch = x ?? 40; }, { step: 1, min: 10, max: 80, suffix: '°' })),
-      cam?.bounds ? h('p', { class: 'le-hint' }, 'This level also defines custom camera focus bounds (kept as they are).') : null),
+      row(tr('dialogs.settings.distance'), camDist.el, tr('dialogs.settings.distanceHint', { n: ROOM_CAMERA.distance })),
+      row(tr('dialogs.settings.pitch'), camPitch.el),
+      row(tr('dialogs.settings.highGround'), boolControl({ value: v.hgOn, label: tr('dialogs.settings.highGroundLabel'), onChange: (x) => { v.hgOn = x; } }).el),
+      row(tr('dialogs.settings.hgMinY'), num(() => v.hgMinY, (x) => { v.hgMinY = x ?? 3; }, { step: 0.5, min: 0, max: 20 }), tr('dialogs.settings.hgMinYHint')),
+      row(tr('dialogs.settings.hgPitch'), num(() => v.hgPitch, (x) => { v.hgPitch = x ?? 40; }, { step: 1, min: 10, max: 80, suffix: '°' })),
+      cam?.bounds ? h('p', { class: 'le-hint' }, tr('dialogs.settings.cameraBounds')) : null),
     water: h('div', { class: 'le-form' },
-      row('Water level (world units)', num(() => v.waterLevel, (x) => { v.waterLevel = x ?? 0.4; }, { step: 0.05, min: -2, max: 12 }), 'World height of the water surface. Water tiles whose bed is above it get a shallow depth.'),
-      row('Flow', h('div', { class: 'le-inline' }, num(() => v.flowX, (x) => { v.flowX = x ?? 0; }, { step: 0.05 }), h('span', { class: 'le-times' }, 'x · z'), num(() => v.flowZ, (x) => { v.flowZ = x ?? 0; }, { step: 0.05 })), 'Default ripple drift (x, z); tiles can override the speed.'),
-      row('Reflection', num(() => v.reflect, (x) => { v.reflect = x ?? 0.2; }, { step: 0.05, min: 0, max: 1 })),
-      row('Neutral tint', num(() => v.neutral, (x) => { v.neutral = x ?? 0.2; }, { step: 0.05, min: 0, max: 1 })),
-      row('Glints', num(() => v.glint, (x) => { v.glint = x ?? 1; }, { step: 0.05, min: 0, max: 2 }), 'Density of the sun and moon sparkles (1 = default; a big, calm lake reads better with fewer).')),
+      row(tr('dialogs.settings.waterLevel'), num(() => v.waterLevel, (x) => { v.waterLevel = x ?? 0.4; }, { step: 0.05, min: -2, max: 12 }), tr('dialogs.settings.waterLevelHint')),
+      row(tr('dialogs.settings.flow'), h('div', { class: 'le-inline' }, num(() => v.flowX, (x) => { v.flowX = x ?? 0; }, { step: 0.05 }), h('span', { class: 'le-times' }, 'x · z'), num(() => v.flowZ, (x) => { v.flowZ = x ?? 0; }, { step: 0.05 })), tr('dialogs.settings.flowHint')),
+      row(tr('dialogs.settings.reflection'), num(() => v.reflect, (x) => { v.reflect = x ?? 0.2; }, { step: 0.05, min: 0, max: 1 })),
+      row(tr('dialogs.settings.neutral'), num(() => v.neutral, (x) => { v.neutral = x ?? 0.2; }, { step: 0.05, min: 0, max: 1 })),
+      row(tr('dialogs.settings.glints'), num(() => v.glint, (x) => { v.glint = x ?? 1; }, { step: 0.05, min: 0, max: 2 }), tr('dialogs.settings.glintsHint'))),
   };
   const body = h('div', { class: 'le-settings-body' });
   const show = (k) => { clear(body).appendChild(panes[k]); };
   const tabs = segmented({
-    options: [{ value: 'general', label: 'General' }, { value: 'environment', label: 'Environment' }, { value: 'camera', label: 'Camera' }, { value: 'water', label: 'Water' }],
+    options: [
+      { value: 'general', label: tr('dialogs.settings.tabGeneral') }, { value: 'environment', label: tr('dialogs.settings.tabEnvironment') },
+      { value: 'camera', label: tr('dialogs.settings.tabCamera') }, { value: 'water', label: tr('dialogs.settings.tabWater') },
+    ],
     value: 'general', onChange: show, className: 'le-tabs',
   });
   show('general');
   updRoom();
   return showDialog({
-    title: 'Level settings', icon: ICONS.settings, width: 620, subtitle: `${L.width} × ${L.depth} tiles${interior0 ? ' · a room' : ''}`,
+    title: tr('dialogs.settings.title'), icon: ICONS.settings, width: 620,
+    subtitle: `${tr('dialogs.tilesSize', { w: L.width, d: L.depth })}${interior0 ? tr('dialogs.settings.aRoom') : ''}`,
     content: [tabs.el, body],
-    buttons: [{ label: 'Cancel', value: null }, { label: 'Apply', primary: true }],
+    buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: null }, { key: 'Apply', label: tr('common.apply'), primary: true }],
   }).result.then((r) => {
     if (r !== 'Apply') return false;
     const camera = v.camDistance == null && v.camPitch == null && !cam?.bounds ? null
@@ -623,8 +655,8 @@ export function levelSettingsDialog(app) {
       environment,
       waterLevel: v.waterLevel,
       water,
-    }, 'Level settings');
-    st.notify('Level settings updated');
+    }, tr('dialogs.settings.title'));
+    st.notify(tr('dialogs.settings.updated'));
     return true;
   });
 }
@@ -644,10 +676,10 @@ export function resizeDialog(app) {
   const v = { width: L.width, depth: L.depth, anchor: 'c', fill: 'g' };
   const w = numberControl({ value: v.width, min: MIN_SIZE, max: MAX_SIZE, step: 1, int: true, slider: false, onChange: (x) => { v.width = clampSize(x); upd(); } });
   const d = numberControl({ value: v.depth, min: MIN_SIZE, max: MAX_SIZE, step: 1, int: true, slider: false, onChange: (x) => { v.depth = clampSize(x); upd(); } });
-  const grid = h('div', { class: 'le-anchor-grid', role: 'radiogroup', 'aria-label': 'Anchor' });
+  const grid = h('div', { class: 'le-anchor-grid', role: 'radiogroup', 'aria-label': tr('dialogs.resize.anchor') });
   const cells = new Map();
   for (const a of ANCHORS) {
-    const b = h('button', { class: 'le-anchor-cell', type: 'button', title: `Keep content anchored ${a === 'c' ? 'in the centre' : `to the ${a.toUpperCase()}`}`, onClick: () => { v.anchor = a; upd(); } });
+    const b = h('button', { class: 'le-anchor-cell', type: 'button', title: anchorTitle(a), onClick: () => { v.anchor = a; upd(); } });
     cells.set(a, b);
     grid.appendChild(b);
   }
@@ -669,28 +701,43 @@ export function resizeDialog(app) {
     });
     const dw = v.width - L.width;
     const dd = v.depth - L.depth;
-    const fmtD = (n, what) => (n === 0 ? `same ${what}` : `${n > 0 ? '+' : '−'}${Math.abs(n)} ${what}`);
-    const lost = (dw < 0 || dd < 0) ? ' — tiles outside the new edges are removed (objects are kept)' : '';
-    summary.textContent = `${L.width} × ${L.depth} → ${v.width} × ${v.depth}  (${fmtD(dw, 'columns')}, ${fmtD(dd, 'rows')})${lost}`;
+    const signed = (n) => `${n > 0 ? '+' : '−'}${Math.abs(n)}`;
+    const cols = dw === 0 ? tr('dialogs.resize.sameColumns') : tr('dialogs.resize.columns', { d: signed(dw) });
+    const rows = dd === 0 ? tr('dialogs.resize.sameRows') : tr('dialogs.resize.rows', { d: signed(dd) });
+    const lost = (dw < 0 || dd < 0) ? tr('dialogs.resize.lost') : '';
+    summary.textContent = tr('dialogs.resize.summary', { w: L.width, d: L.depth, nw: v.width, nd: v.depth, cols, rows, lost });
   }
   upd();
   return showDialog({
-    title: 'Resize level', icon: ICONS.resize, width: 520,
+    title: tr('dialogs.resize.title'), icon: ICONS.resize, width: 520,
     content: [
-      row('New size', h('div', { class: 'le-inline' }, w.el, h('span', { class: 'le-times' }, '×'), d.el), `${MIN_SIZE}–${MAX_SIZE} tiles`),
-      row('Anchor', h('div', { class: 'le-inline' }, grid, h('div', { class: 'le-form-hint' }, 'The content stays attached to this side; new tiles appear on the others.'))),
-      row('New tiles', fill.el),
+      row(tr('dialogs.resize.newSize'), h('div', { class: 'le-inline' }, w.el, h('span', { class: 'le-times' }, '×'), d.el), tr('dialogs.resize.sizeHint', { min: MIN_SIZE, max: MAX_SIZE })),
+      row(tr('dialogs.resize.anchor'), h('div', { class: 'le-inline' }, grid, h('div', { class: 'le-form-hint' }, tr('dialogs.resize.anchorHint')))),
+      row(tr('dialogs.resize.newTiles'), fill.el),
       summary,
     ],
-    buttons: [{ label: 'Cancel', value: null }, { label: 'Resize', primary: true }],
+    buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: null }, { key: 'Resize', label: tr('dialogs.resize.button'), primary: true }],
   }).result.then((r) => {
     if (r !== 'Resize') return false;
     if (v.width === L.width && v.depth === L.depth) return false;
     const next = resizeLevel(st.level, v.width, v.depth, { anchor: v.anchor, fill: v.fill });
-    st.setLevel(next, 'Resize level');
-    st.notify(`Resized to ${v.width} × ${v.depth}`);
+    st.setLevel(next, tr('dialogs.resize.title'));
+    st.notify(tr('dialogs.resize.done', { w: v.width, d: v.depth }));
     return true;
   });
+}
+
+/**
+ * An anchor cell's tooltip ("Keep content anchored to the NW").
+ * @param {ResizeAnchor} a
+ */
+function anchorTitle(a) {
+  if (a === 'c') return tr('dialogs.resize.anchorCentre');
+  const dir = {
+    nw: tr('dialogs.resize.dirNW'), n: tr('dialogs.resize.dirN'), ne: tr('dialogs.resize.dirNE'), w: tr('dialogs.resize.dirW'),
+    e: tr('dialogs.resize.dirE'), sw: tr('dialogs.resize.dirSW'), s: tr('dialogs.resize.dirS'), se: tr('dialogs.resize.dirSE'),
+  }[a];
+  return tr('dialogs.resize.anchorTo', { dir });
 }
 
 function arrowFor(dx, dz) {
@@ -726,35 +773,35 @@ export function storyPreviewDialog(app) {
   });
   values.input.setAttribute('spellcheck', 'false');
   values.input.classList.add('le-story-values');
-  const on = boolControl({ value: !!st.view.storyPreview, label: 'Preview on', onChange: (x) => { st.setView({ storyPreview: x }); upd(); } });
+  const on = boolControl({ value: !!st.view.storyPreview, label: tr('dialogs.story.previewOn'), onChange: (x) => { st.setView({ storyPreview: x }); upd(); } });
   const issues = h('ul', { class: 'le-dialog-list is-errors le-story-issues', hidden: true });
   const summary = h('div', { class: 'le-form-summary le-story-summary' });
   function upd() {
     const { errors } = parseStoryValues(values.input.value);
     clear(issues);
     issues.hidden = !errors.length;
-    for (const e of errors) issues.appendChild(h('li', null, `line ${e.line}: ${e.msg}`));
+    for (const e of errors) issues.appendChild(h('li', null, tr('dialogs.story.lineIssue', { line: e.line, msg: e.msg })));
     const n = storyConditionCount(st.level);
     const hidden = storyHiddenIds(st).size;
     summary.textContent = !n
-      ? 'No object of this level has a story condition (Story: only when / gone when).'
+      ? tr('dialogs.story.none')
       : st.view.storyPreview
-        ? `${n} object${n === 1 ? ' has' : 's have'} a story condition · ${hidden} hidden now`
-        : `${n} object${n === 1 ? ' has' : 's have'} a story condition · the preview is off: all are shown`;
+        ? trn('dialogs.story.countOn', n, { hidden })
+        : trn('dialogs.story.countOff', n);
   }
   upd();
   return showDialog({
-    title: 'Story preview', icon: ICONS.eye, width: 560, className: 'is-story-preview',
-    subtitle: 'Not saved with the level',
+    title: tr('dialogs.story.title'), icon: ICONS.eye, width: 560, className: 'is-story-preview',
+    subtitle: tr('dialogs.story.subtitle'),
     content: [
-      h('p', { class: 'le-dialog-text' }, 'While the preview is on, objects whose “Story: only when” / “Story: gone when” do not allow them with these values are hidden in the 2D map and the 3D view (and cannot be picked).'),
+      h('p', { class: 'le-dialog-text' }, tr('dialogs.story.intro')),
       h('div', { class: 'le-story-toggle' }, on.el),
       values.el,
       issues,
-      h('div', { class: 'le-form-hint' }, 'One value per line: a flag name alone is set; name = number (a variable, item:<id>, visits:<actor>, visited:<level>, done:<key>); quest:<id> = none | active | done | failed; stage:<quest> = <stage>; hour, day, gold, chapter, level, weather = value (hour: the 3D preview\'s hour when not given). # starts a comment.'),
+      h('div', { class: 'le-form-hint' }, tr('dialogs.story.syntax')),
       summary,
     ],
-    buttons: [{ label: 'Done', primary: true }],
+    buttons: [{ key: 'Done', label: tr('common.done'), primary: true }],
   }).result.then((r) => {
     // (values typed just before the dialog closed still apply)
     if (timer) apply(values.input.value);
@@ -780,22 +827,22 @@ const STORY_INPUT_DELAY = 200;
  * @returns {Promise<boolean>}
  */
 export function findTextKeyDialog(app) {
-  const input = textControl({ value: '', onChange: () => {}, placeholder: '9F2A1B3C4D5E6F708192A3B4C5D6E7F8  or  #line:9F2A…' });
+  const input = textControl({ value: '', onChange: () => {}, placeholder: tr('dialogs.findKey.placeholder') });
   input.input.classList.add('le-hex');
   input.input.setAttribute('autocomplete', 'off');
-  input.input.setAttribute('aria-label', 'Text key');
-  const intro = 'Every text a player reads has a text key that names it in the translation tables (the inspector shows it under the field). Paste one, or a script line’s #line: tag.';
+  input.input.setAttribute('aria-label', tr('dialogs.findKey.textKey'));
+  const intro = tr('dialogs.findKey.intro');
   const msg = h('div', { class: 'le-form-hint le-find-key-msg' }, intro);
   input.input.addEventListener('input', () => { msg.textContent = intro; msg.classList.remove('is-error'); });
   /** @type {ReturnType<EditorApp['locateTextKey']>|null} */
   let hit = null;
   return showDialog({
-    title: 'Find by text key', icon: ICONS.search, width: 540, className: 'is-find-key',
-    content: [h('div', { class: 'le-form' }, row('Text key', input.el)), msg],
+    title: tr('dialogs.findKey.title'), icon: ICONS.search, width: 540, className: 'is-find-key',
+    content: [h('div', { class: 'le-form' }, row(tr('dialogs.findKey.textKey'), input.el)), msg],
     buttons: [
-      { label: 'Cancel', value: null },
+      { key: 'Cancel', label: tr('common.cancel'), value: null },
       {
-        label: 'Find', primary: true,
+        key: 'Find', label: tr('dialogs.findKey.find'), primary: true,
         onClick: () => {
           const r = app.locateTextKey(input.input.value);
           if (!r.found) {
@@ -826,7 +873,7 @@ export function shortcutsDialog(groups) {
   const content = h('div', { class: 'le-shortcuts' }, groups.map((g) => h('section', { class: 'le-shortcut-group' },
     h('h3', null, g.title),
     g.items.map(([k, label]) => h('div', { class: 'le-sc-row' }, h('span', { class: 'le-sc-label' }, label), keys(k))))));
-  return showDialog({ title: 'Keyboard shortcuts', icon: ICONS.keyboard, width: 860, content, buttons: [{ label: 'Close', primary: true }] }).result;
+  return showDialog({ title: tr('dialogs.shortcuts.title'), icon: ICONS.keyboard, width: 860, content, buttons: [{ key: 'Close', label: tr('common.close'), primary: true }] }).result;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -840,23 +887,56 @@ export function shortcutsDialog(groups) {
 export function restoreDialog(meta, { older = 0, reopened = false } = {}) {
   const when = formatTime(meta.savedAt);
   return confirmDialog({
-    title: 'Restore unsaved work?', icon: ICONS.info, width: 460,
+    title: tr('dialogs.restore.title'), icon: ICONS.info, width: 460,
     message: h('div', null,
-      h('p', { class: 'le-dialog-text' }, reopened
-        ? 'This level has unsaved changes from an earlier editor session. Restore them?'
-        : 'The editor closed with unsaved changes. A working copy was autosaved:'),
-      h('div', { class: 'le-restore-card' }, icon(ICONS.map, 'le-icon le-file-icon'), h('div', null, h('div', { class: 'le-file-title' }, meta.name || 'Untitled'), h('div', { class: 'le-file-sub' }, `${meta.width ?? '?'} × ${meta.depth ?? '?'} · autosaved ${when}`))),
-      h('p', { class: 'le-dialog-text le-dim' }, `Close this prompt to decide later: the copy is kept in File › Open › This browser.${older ? ` ${older} older recovered cop${older === 1 ? 'y is' : 'ies are'} there too.` : ''}`)),
-    buttons: [{ label: 'Discard', value: false }, { label: 'Restore', value: true, primary: true }],
+      h('p', { class: 'le-dialog-text' }, reopened ? tr('dialogs.restore.reopened') : tr('dialogs.restore.closed')),
+      h('div', { class: 'le-restore-card' }, icon(ICONS.map, 'le-icon le-file-icon'), h('div', null, h('div', { class: 'le-file-title' }, meta.name || tr('common.untitled')), h('div', { class: 'le-file-sub' }, tr('dialogs.restore.meta', { w: meta.width ?? '?', d: meta.depth ?? '?', when })))),
+      h('p', { class: 'le-dialog-text le-dim' }, `${tr('dialogs.restore.later')}${older ? trn('dialogs.restore.older', older) : ''}`)),
+    buttons: [{ key: 'Discard', label: tr('dialogs.restore.discard'), value: false }, { key: 'Restore', label: tr('dialogs.restore.restore'), value: true, primary: true }],
   });
 }
 
-/** validateLevel wording → what the editor calls things (the UI says "player start"). */
-export function friendlyProblem(msg) {
-  const m = String(msg);
-  if (m === 'spawn is not on walkable ground') return 'The player start is on water, void or blocked ground. Move it onto walkable ground or a bridge.';
-  if (m === 'spawn is outside the map') return 'The player start is outside the map. Move it back onto the level.';
-  if (/^tiles row count|^heights row count|row \d+ has length/.test(m)) return `The map data is damaged (${m}). Resize the level or re-open the file.`;
+/**
+ * `validateLevel` messages → issue codes (a plain message string handed to `friendlyProblem`).
+ * @type {[RegExp, (m: RegExpMatchArray) => { code: string, row?: number, length?: number }][]}
+ */
+const PROBLEM_MESSAGES = [
+  [/^spawn is not on walkable ground$/, () => ({ code: 'spawn.unwalkable' })],
+  [/^spawn is outside the map$/, () => ({ code: 'spawn.outside' })],
+  [/^(tiles|heights) row count does not match depth$/, (m) => ({ code: `${m[1]}.rows` })],
+  [/^(tiles|heights) row (\d+) has length (\d+)$/, (m) => ({ code: `${m[1]}.row`, row: Number(m[2]), length: Number(m[3]) })],
+];
+
+/**
+ * A play-test problem in the editor's words (the UI says "player start"), in the editor's language.
+ * @param {import('../../engine/level/LevelFormat.js').LevelIssue|string} issue  an issue of
+ *   `validateLevelIssues` (worded by its `code`), or a `validateLevel` message (English; a known
+ *   one is worded like its issue, another is shown capitalised)
+ * @returns {string}
+ */
+export function friendlyProblem(issue) {
+  const m = String(typeof issue === 'object' && issue ? issue.message : issue);
+  /** @type {{ code?: string, row?: number, length?: number }|null} */
+  let it = typeof issue === 'object' && issue ? issue : null;
+  if (!it) {
+    for (const [re, make] of PROBLEM_MESSAGES) {
+      const hit = m.match(re);
+      if (hit) { it = make(hit); break; }
+    }
+  }
+  const row = it?.row ?? '?';
+  const length = it?.length ?? '?';
+  switch (it?.code) {
+    case 'spawn.unwalkable': return tr('dialogs.problem.spawnUnwalkable');
+    case 'spawn.outside': return tr('dialogs.problem.spawnOutside');
+    case 'tiles.rows': return tr('dialogs.problem.damaged', { detail: tr('dialogs.problem.tilesRows') });
+    case 'heights.rows': return tr('dialogs.problem.damaged', { detail: tr('dialogs.problem.heightsRows') });
+    case 'tiles.row': return tr('dialogs.problem.damaged', { detail: tr('dialogs.problem.tilesRow', { row, length }) });
+    case 'heights.row': return tr('dialogs.problem.damaged', { detail: tr('dialogs.problem.heightsRow', { row, length }) });
+    default: break;
+  }
+  if (/^tiles row count|^heights row count|row \d+ has length/.test(m)) return tr('dialogs.problem.damaged', { detail: m });
+  // (an unknown message is English: capitalised as before)
   return m.charAt(0).toUpperCase() + m.slice(1);
 }
 
@@ -864,19 +944,23 @@ export function friendlyProblem(msg) {
 export function problemsDialog(title, errors, { fixSpawn = null } = {}) {
   return showDialog({
     title, icon: ICONS.warning, width: 500,
-    content: [h('p', { class: 'le-dialog-text' }, 'The level cannot be played until these problems are fixed:'), h('ul', { class: 'le-dialog-list is-errors' }, errors.map((e) => h('li', null, e)))],
-    buttons: [fixSpawn ? { label: 'Select player start', left: true, onClick: fixSpawn } : null, { label: 'OK', primary: true }].filter(Boolean),
+    content: [h('p', { class: 'le-dialog-text' }, tr('dialogs.problems.intro')), h('ul', { class: 'le-dialog-list is-errors' }, errors.map((e) => h('li', null, e)))],
+    buttons: [
+      fixSpawn ? { key: 'Select player start', label: tr('dialogs.problems.selectSpawn'), left: true, onClick: fixSpawn } : null,
+      { key: 'OK', label: tr('common.ok'), primary: true },
+    ].filter(Boolean),
   }).result;
 }
 
 /** About box. */
 export function aboutDialog() {
+  const brand = BRAND_NAME;
   return showDialog({
-    title: 'Luminati Level Editor', icon: ICONS.help, width: 480,
+    title: tr('dialogs.about.title', { brand }), icon: ICONS.help, width: 480,
     content: h('div', { class: 'le-about' },
-      h('div', { class: 'le-about-logo' }, 'Luminati'),
-      h('p', { class: 'le-dialog-text' }, 'A visual map editor for the Luminati 2.5D pixel-art engine: paint terrain, sculpt heights, place houses, trees, lights, props and villagers, then play-test the level in the real game.'),
-      h('p', { class: 'le-dialog-text le-dim' }, 'Levels are plain JSON (luminati-level v1). Save them to public/levels/ to ship them with the game, or keep them in the browser / as files.')),
-    buttons: [{ label: 'Close', primary: true }],
+      h('div', { class: 'le-about-logo' }, brand),
+      h('p', { class: 'le-dialog-text' }, tr('dialogs.about.text', { brand })),
+      h('p', { class: 'le-dialog-text le-dim' }, tr('dialogs.about.format'))),
+    buttons: [{ key: 'Close', label: tr('common.close'), primary: true }],
   }).result;
 }

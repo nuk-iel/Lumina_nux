@@ -1,6 +1,8 @@
 import { ICONS } from '../icons.js';
 import { snapTo, tidy } from './common.js';
 import { isWalkablePoint } from '../../engine/level/LevelFormat.js';
+import { tr } from '../i18n.js';
+import { optionLabel } from '../catalogI18n.js';
 
 /**
  * @import { LevelSpawn } from '../../engine/level/types.js'
@@ -30,10 +32,11 @@ function spot(state, ev) {
 /** @type {Tool} */
 export const SpawnTool = {
   id: 'spawn',
-  label: 'Player start',
+  get label() { return tr('tools.spawn.label'); },
   shortcut: 'P',
   icon: ICONS.spawn,
-  help: 'Player start — click or drag to move where the player appears · R: turn the facing · Alt: no snap',
+  get help() { return tr('tools.help', { name: tr('tools.spawn.name'), tip: tr('tools.spawn.tip') }); },
+  get tip() { return tr('tools.spawn.tip'); },
   cursor: 'crosshair',
 
   activate() { drag = false; },
@@ -41,7 +44,7 @@ export const SpawnTool = {
 
   pointerDown(ev, state) {
     const p = spot(state, ev);
-    state.begin('Move player start');
+    state.begin(tr('tools.undo.movePlayerStart'));
     drag = true;
     state.setSpawn(p.x, p.z);
     state.emit('preview');
@@ -65,7 +68,7 @@ export const SpawnTool = {
     state.commit();
     if (!ev.cancelled) state.select(['spawn']);
     const s = state.level.spawn;
-    state.notify(isWalkableAt(state.level, s.x, s.z) ? `Player start moved to ${s.x}, ${s.z}` : 'Warning: the player start is not on walkable ground');
+    state.notify(isWalkableAt(state.level, s.x, s.z) ? tr('tools.msg.spawnMoved', { x: s.x, z: s.z }) : tr('tools.msg.spawnNotWalkable'));
   },
 
   keyDown(e, state) {
@@ -73,7 +76,7 @@ export const SpawnTool = {
       const s = state.level.spawn;
       const k = FACINGS.indexOf(s.facing);
       state.setSpawn(s.x, s.z, FACINGS[(k + (e.shiftKey ? 3 : 1)) % 4]);
-      state.notify(`Player faces ${state.level.spawn.facing}`);
+      state.notify(tr('tools.msg.playerFaces', { facing: optionLabel(state.level.spawn.facing) }));
       return true;
     }
     return false;
@@ -88,7 +91,7 @@ export const SpawnTool = {
       cells: [{ i: Math.floor(p.x), j: Math.floor(p.z) }],
       cellColor: ok ? 'rgba(127,227,255,0.35)' : 'rgba(255,100,90,0.45)',
       spawn: { x: p.x, z: p.z, facing: state.level.spawn.facing },
-      label: ok ? `Player start · faces ${state.level.spawn.facing}` : 'Not walkable here',
+      label: ok ? tr('tools.preview.spawn', { facing: optionLabel(state.level.spawn.facing) }) : tr('tools.preview.notWalkable'),
     };
   },
 };

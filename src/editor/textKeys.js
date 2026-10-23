@@ -43,6 +43,7 @@ import {
 } from '../engine/i18n/ContentKeys.js';
 import { carryObjectText, carryRootText, levelKeys, levelTexts, scriptTextLines, textKeyIssues } from '../engine/i18n/TextKeys.js';
 import { scriptLines } from '../engine/level/StoryScript.js';
+import { tr, trn, commaList } from './i18n.js';
 
 /** @import { Mint, KeyedText, SharedKeys } from '../engine/i18n/TextKeys.js' */
 
@@ -736,13 +737,13 @@ const SHOWN = 4;
  * @param {string} where
  */
 export function placeName(where) {
-  const page = (holder, field, i, c) => `${holder} › ${field}${i != null ? `, page ${Number(i) + 1}` : ''}${c != null ? ` › choice ${Number(c) + 1}` : ''}`;
+  const page = (holder, field, i, c) => `${holder} › ${field}${i != null ? tr('story.place.page', { n: Number(i) + 1 }) : ''}${c != null ? tr('story.place.choice', { n: Number(c) + 1 }) : ''}`;
   let m = /^(.*)\.textKeys\.([^.[\]]+)(?:\[(\d+)\])?(?:\.key|\.choices\[(\d+)\])?$/.exec(where);
   if (m) return page(m[1], m[2], m[3], m[4]);
   m = /^(.*) › ([^.[\]:]+)\[(\d+)\](?:\.choices\[(\d+)\])?$/.exec(where);
   if (m) return page(m[1], m[2], m[3], m[4]);
   m = /^(.*?)(?:\.| › )([A-Za-z]+):(\d+)$/.exec(where);
-  if (m) return `${m[1]} › ${m[2]}, line ${m[3]}`;
+  if (m) return tr('story.place.line', { holder: m[1], field: m[2], n: m[3] });
   return where;
 }
 
@@ -759,17 +760,11 @@ export function placeName(where) {
 export function textKeyWarnings(level, { file = '' } = {}) {
   const issues = textKeyIssues(level);
   const out = [];
-  const list = (xs) => `${xs.slice(0, SHOWN).map((x) => placeName(x.where)).join(', ')}${xs.length > SHOWN ? ` and ${xs.length - SHOWN} more` : ''}`;
+  const list = (xs) => `${commaList(xs.slice(0, SHOWN).map((x) => placeName(x.where)))}${xs.length > SHOWN ? tr('story.textKeys.listMore', { n: xs.length - SHOWN }) : ''}`;
   const missing = issues.filter((i) => i.kind === 'missing');
   const stray = issues.filter((i) => i.kind === 'stray');
-  if (missing.length) {
-    const n = missing.length;
-    out.push(`Text keys: ${n} text${n === 1 ? ' has' : 's have'} no text key (${list(missing)}): ${n === 1 ? 'it stays' : 'they stay'} English in every language. Level › Assign text keys gives ${n === 1 ? 'it one' : 'each one'}.`);
-  }
-  if (stray.length) {
-    const n = stray.length;
-    out.push(`Text keys: ${n} text key${n === 1 ? ' is' : 's are'} on no text (${list(stray)}). Level › Assign text keys removes ${n === 1 ? 'it' : 'them'}.`);
-  }
+  if (missing.length) out.push(trn('story.textKeys.missing', missing.length, { list: list(missing) }));
+  if (stray.length) out.push(trn('story.textKeys.stray', stray.length, { list: list(stray) }));
   // a key on two texts (as textKeyIssues finds them: every key the level holds, in its order), and
   // whether its texts read alike
   /** @type {Map<string, Set<string>>} */
@@ -782,16 +777,15 @@ export function textKeyWarnings(level, { file = '' } = {}) {
   /** @type {Map<string, string>} */
   const seen = new Map();
   let n = 0;
-  const fix = `npm run i18n:keys -- --fix ${file || '<the level file>'}`;
+  const fix = `npm run i18n:keys -- --fix ${file || tr('story.textKeys.levelFile')}`;
   for (const { key, where } of levelKeys(level)) {
     const was = seen.get(key);
     if (!was) { seen.set(key, where); continue; }
     if (++n > 20) continue;
-    out.push((english.get(key)?.size ?? 0) > 1
-      ? `Text key error: ${placeName(where)}: text key ${key} is also on ${placeName(was)}, with other English — save the level, then run ${fix}: the translation tables decide which text keeps the key, the other gets a new one.`
-      : `Text key error: ${placeName(where)}: text key ${key} is also on ${placeName(was)} (a key names one text) — Level › Assign text keys gives the later one a new key.`);
+    const vars = { place: placeName(where), key, other: placeName(was), fix };
+    out.push((english.get(key)?.size ?? 0) > 1 ? tr('story.textKeys.repeatedOther', vars) : tr('story.textKeys.repeatedSame', vars));
   }
-  if (n > 20) out.push(`Text key error: ${n - 20} more keys are on two texts.`);
+  if (n > 20) out.push(tr('story.textKeys.moreRepeated', { n: n - 20 }));
   return out;
 }
 

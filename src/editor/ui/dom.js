@@ -1,6 +1,7 @@
 /**
  * Tiny DOM helpers shared by the editor panels (no framework).
  */
+import { tr, editorLang } from '../i18n.js';
 
 /**
  * Create an element.
@@ -82,12 +83,14 @@ export function formatBytes(n) {
 export function formatTime(ms) {
   if (!Number.isFinite(ms)) return '';
   const d = Date.now() - ms;
-  if (d < 45e3) return 'just now';
-  if (d < 3600e3) return `${Math.round(d / 60e3)} min ago`;
-  if (d < 86400e3) return `${Math.round(d / 3600e3)} h ago`;
+  if (d < 45e3) return tr('panels.time.justNow');
+  if (d < 3600e3) return tr('panels.time.minAgo', { n: Math.round(d / 60e3) });
+  if (d < 86400e3) return tr('panels.time.hAgo', { n: Math.round(d / 3600e3) });
   const date = new Date(ms);
-  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' +
-    date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  // (English: the browser's locale, as before; Chinese: the editor's)
+  const locale = editorLang() === 'zh' ? 'zh-CN' : undefined;
+  return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' +
+    date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 /** Format a number compactly (trailing zeros trimmed). */
@@ -105,4 +108,4 @@ export function shortcutLabel(s) {
 }
 
 /** Tooltip text "Label (Shortcut)". */
-export const tip = (label, shortcut) => (shortcut ? `${label}  (${shortcutLabel(shortcut)})` : label);
+export const tip = (label, shortcut) => (shortcut ? tr('panels.tip', { label, key: shortcutLabel(shortcut) }) : label);

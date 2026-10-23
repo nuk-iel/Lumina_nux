@@ -1,6 +1,7 @@
 import { ICONS } from '../icons.js';
 import { rectCells, clipCells, tileLabel } from './common.js';
 import { pickTileAt, tilePreviewColor } from './PaintTool.js';
+import { tr } from '../i18n.js';
 
 /** @import { Tool, ToolPreview } from './index.js' */
 
@@ -14,10 +15,11 @@ function outlineOf(state, ev) {
 /** @type {Tool} */
 export const RectTool = {
   id: 'rect',
-  label: 'Rectangle',
+  get label() { return tr('tools.rect.label'); },
   shortcut: 'U',
   icon: ICONS.rect,
-  help: 'Rectangle — drag to fill a rectangle of tiles · Shift: outline only · Alt+click: pick tile',
+  get help() { return tr('tools.help', { name: tr('tools.rect.name'), tip: tr('tools.rect.tip') }); },
+  get tip() { return tr('tools.rect.tip'); },
   cursor: 'crosshair',
 
   activate() { drag = null; },
@@ -47,7 +49,7 @@ export const RectTool = {
     if (!ev.cancelled) {
       const cells = clipCells(state.level, rectCells(d.i0, d.j0, d.i1, d.j1, d.outline));
       const { tile, paintHeight, heightValue } = state.toolOptions;
-      if (cells.length) state.editTiles(cells.map((c) => ({ ...c, tile, height: paintHeight ? heightValue : null })), 'Rectangle');
+      if (cells.length) state.editTiles(cells.map((c) => ({ ...c, tile, height: paintHeight ? heightValue : null })), tr('tools.undo.rectangle'));
     }
     state.emit('preview');
   },
@@ -67,7 +69,7 @@ export const RectTool = {
         cells: rectCells(drag.i0, drag.j0, drag.i1, drag.j1, drag.outline),
         cellColor: color,
         rect: { minX: Math.min(drag.i0, drag.i1), maxX: Math.max(drag.i0, drag.i1) + 1, minZ: Math.min(drag.j0, drag.j1), maxZ: Math.max(drag.j0, drag.j1) + 1 },
-        label: `${w} × ${d} · ${tileLabel(state.level, state.toolOptions.tile)}${drag.outline ? ' (outline)' : ''}`,
+        label: `${w} × ${d} · ${tileLabel(state.level, state.toolOptions.tile)}${drag.outline ? tr('tools.preview.outline') : ''}`,
       };
     }
     if (!state.hover || !hover) return null;

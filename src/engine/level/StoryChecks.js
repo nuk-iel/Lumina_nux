@@ -18,6 +18,7 @@ import {
 import { levelEntrances, entranceName, LIVE_STORY_TYPES } from './Travel.js';
 import { OBJECT_TYPES } from './ObjectCatalog.js';
 import { isOwnKey } from '../utils/own.js';
+import { sm } from './storyMessages.js';
 
 /**
  * @import { Level, LevelObject } from './types.js'
@@ -182,7 +183,7 @@ const resolve = (v) => (typeof v === 'function' ? /** @type {() => T} */ (v)() :
 export function conditionFieldIssues(o, field, ctx = {}, own = {}) {
   /** @type {FieldIssue[]} */
   const out = [];
-  if (field === 'if' && o?.type === 'event' && o.on === 'change' && !text(o.if)) out.push({ severity: 'error', msg: 'a "condition becomes true" event needs a condition' });
+  if (field === 'if' && o?.type === 'event' && o.on === 'change' && !text(o.if)) out.push({ severity: 'error', msg: sm('check.changeNeedsIf') });
   const entry = conditionFields(o).find(([f]) => f === field);
   if (!entry) return out;
   const [, v, rule] = entry;
@@ -201,7 +202,7 @@ export function conditionFieldIssues(o, field, ctx = {}, own = {}) {
     addConditionRefs(flagCondition(src), reads);
     const sets = reads.reads.size ? resolve(own.sets) : null;
     const mine = sets ? [...reads.reads].filter((f) => sets.has(f)) : [];
-    if (mine.length) out.push({ severity: 'warning', msg: `a ${OBJECT_TYPES[o.type]?.label ?? o.type} follows its story condition only when the level is entered — "${mine.join('", "')}" is set in this level, so the change shows on the next visit` });
+    if (mine.length) out.push({ severity: 'warning', msg: sm('check.entryOnly', { type: OBJECT_TYPES[o.type]?.label ?? o.type, flags: mine }) });
   }
   return out;
 }
@@ -221,19 +222,8 @@ export function readCondition(v, rule) {
   return p.error ? { cond: flagCondition(src), error: p.error } : p;
 }
 
-/** What a reserved word written as a bare flag was probably meant to say. */
-const BARE_HINTS = {
-  gold: 'to read the purse write "gold > 0"',
-  hour: 'to read the clock write a comparison such as "hour >= 20"',
-  day: 'to read the day write a comparison such as "day > 1"',
-  visits: 'to read the visits write "visits > 0"',
-  chapter: 'to read the chapter write "chapter = <chapter id>"',
-  level: 'to read the level write "level = <level id>"',
-  weather: 'to read the weather write e.g. "weather = rain"',
-  party: 'to read the party write "party > 0" (how many members) or "party:<who>" (one of them)',
-  true: 'a blank field means "always"',
-  false: 'write "not true" for "never"',
-};
+/** The reserved words written as a bare flag with a hint of what was probably meant (storyStrings.js `hint.<word>`). */
+const BARE_HINTS = new Set(['gold', 'hour', 'day', 'visits', 'chapter', 'level', 'weather', 'party', 'true', 'false']);
 
 /**
  * Why a condition field's text is wrong ('' when it is fine): it does not parse; under the flag
@@ -249,15 +239,15 @@ export function conditionError(v, rule) {
   if (rule === 'flag' && isBareName(src)) {
     const low = src.toLowerCase();
     if (RESERVED_WORDS.has(low)) {
-      const hint = isOwnKey(BARE_HINTS, low) ? BARE_HINTS[low] : 'name the flag otherwise';
-      return `"${src}" is a reserved word: alone in this field it is read as a flag of that name, which can never be set — ${hint}`;
+      const hint = sm(BARE_HINTS.has(low) ? `hint.${low}` : 'hint.other');
+      return sm('check.reservedFlag', { src, hint });
     }
-    if (!isFlagName(src)) return `"${src}" is not a usable flag name (letters, digits, _ . -; at most 80 characters; not a number)`;
+    if (!isFlagName(src)) return sm('check.badFlagName', { src });
     return '';
   }
   const { error } = parseCondition(src);
   if (!error) return '';
-  return rule === 'flag' ? `${error} (read as one flag named "${src}" — write it as a condition, or name the flag with letters, digits, _ . -)` : error;
+  return rule === 'flag' ? sm('check.flagParse', { error, src }) : error;
 }
 
 /**
@@ -286,8 +276,8 @@ function doneProblem(name, ctx, local) {
     for (let d = name.indexOf('.'); d >= 0; d = name.indexOf('.', d + 1)) ev(local.events, name.slice(d + 1));
   } else if (!hits.length) return ''; // a campaign level, the campaign's events unknown (the editor)
   if (hits.some((h) => h)) return '';
-  if (hits.length) return `done:${name} reads an event that is not "once" — only a once event is remembered, so it never holds`;
-  return `done:${name} names no "once" event or "once" block ${ctx.events ? 'of the campaign' : 'of this level'}, so it never holds (this level's event: done:<id> · another level's: done:<level>.<id> · a story event or a once block: done:<id>)`;
+  if (hits.length) return sm('check.doneNotOnce', { name });
+  return sm(ctx.events ? 'check.doneNoneCampaign' : 'check.doneNoneLevel', { name });
 }
 
 /**
@@ -303,12 +293,12 @@ function doneProblem(name, ctx, local) {
  */
 export function memberProblem(name, ctx, local) {
   const low = name.toLowerCase();
-  if (low === 'player') return '"party:player": the player leads the party and is never one of its members';
+  if (low === 'player') return sm('check.memberPlayer');
   if (local.villagers?.has(low) || storyActorNames(ctx).has(low)) return '';
-  if (ctx.villagers) return ctx.villagers.has(low) ? '' : `"${name}" (party) is no villager of the campaign's levels and no actor of the story files, so it is never a member`;
+  if (ctx.villagers) return ctx.villagers.has(low) ? '' : sm('check.memberCampaign', { name });
   // (a campaign level whose other levels are not known: the member may have joined in one of them)
   if (ctx.levels || !local.villagers) return '';
-  return `"${name}" (party) is no villager of this level, so it is never a member`;
+  return sm('check.memberLevel', { name });
 }
 
 /**
@@ -325,13 +315,11 @@ export function refIssues(r, ctx = {}, local = NO_LOCAL) {
   /** @type {{ severity: 'error'|'warning', msg: string }[]} */
   const out = [];
   const add = (severity, msg) => out.push({ severity, msg });
-  if (ctx.items) for (const it of r.items) if (!ctx.items.has(it)) add('warning', `item "${it}" is not declared in the story files`);
+  if (ctx.items) for (const it of r.items) if (!ctx.items.has(it)) add('warning', sm('check.itemUndeclared', { item: it }));
   if (ctx.quests) {
     for (const q of r.quests) {
       if (ctx.quests.has(q)) continue;
-      add('warning', r.stageReads?.has(q)
-        ? `quest "${q}" is not declared in the story files — so stage:${q} has no declared order of stages: a stage counts only once the quest reached it`
-        : `quest "${q}" is not declared in the story files`);
+      add('warning', sm(r.stageReads?.has(q) ? 'check.questUndeclaredStage' : 'check.questUndeclared', { q }));
     }
     if (ctx.quests instanceof Map) {
       const seen = new Set();
@@ -339,11 +327,11 @@ export function refIssues(r, ctx = {}, local = NO_LOCAL) {
         const st = ctx.quests.get(quest);
         if (!st || st.includes(stage) || seen.has(`${quest}\u0000${stage}`)) continue;
         seen.add(`${quest}\u0000${stage}`);
-        add('error', `quest "${quest}" has no stage "${stage}"`);
+        add('error', sm('check.noStage', { quest, stage }));
       }
     }
   }
-  if (ctx.levels) for (const l of r.visited ?? []) if (!ctx.levels.has(l)) add('warning', `visited:${l} names no level of the campaign, so it never holds`);
+  if (ctx.levels) for (const l of r.visited ?? []) if (!ctx.levels.has(l)) add('warning', sm('check.visited', { level: l }));
   for (const name of r.done) {
     const why = doneProblem(name, ctx, local);
     if (why) add('warning', why);
@@ -445,7 +433,7 @@ export function backgroundErrors(nodes) {
   const out = [];
   walkNodes(nodes, (n) => {
     const why = backgroundIssue(n);
-    if (why) out.push({ line: n.line, msg: `cannot run in the background: ${why} — drop "background"${n.t === 'say' ? ' or use "bark"' : ''}` });
+    if (why) out.push({ line: n.line, msg: sm(n.t === 'say' ? 'check.backgroundSay' : 'check.background', { why }) });
   });
   return out.sort((a, b) => a.line - b.line);
 }
@@ -516,24 +504,24 @@ export function storyIssues(level, ctx = {}) {
     const id = typeof o?.id === 'string' ? o.id : '';
     // (the editor's condition hint shows the same, field by field)
     for (const field of conditionFieldKeys(o)) {
-      for (const i of conditionFieldIssues(o, field, ctx, { local, sets })) add(i.severity, id, field, 0, i.text !== undefined ? `${field} "${i.text}": ${i.msg}` : i.msg);
+      for (const i of conditionFieldIssues(o, field, ctx, { local, sets })) add(i.severity, id, field, 0, i.text !== undefined ? sm('check.fieldText', { field, text: i.text, msg: i.msg }) : i.msg);
     }
     if (o?.type === 'npc') {
-      if (o.talk !== undefined && !Array.isArray(o.talk) && typeof o.talk !== 'string') add('error', id, 'talk', 0, 'the talk script must be a list of lines');
-      if (text(o.actor) && !isStoryName(text(o.actor))) add('error', id, 'actor', 0, `actor "${text(o.actor)}" is not a name (letters, digits, _ . -)`);
-      else if (text(o.actor) && ctx.actors && !ctx.actors.has(text(o.actor))) add('warning', id, 'actor', 0, `actor "${text(o.actor)}" is not declared in the campaign's story files`);
-      if (text(o.flag) && !isFlagName(text(o.flag))) add('warning', id, 'flag', 0, `flag "${text(o.flag)}" is not a usable flag name (letters, digits, _ . -; not a reserved word)`);
+      if (o.talk !== undefined && !Array.isArray(o.talk) && typeof o.talk !== 'string') add('error', id, 'talk', 0, sm('check.talkNotList'));
+      if (text(o.actor) && !isStoryName(text(o.actor))) add('error', id, 'actor', 0, sm('check.actorName', { actor: text(o.actor) }));
+      else if (text(o.actor) && ctx.actors && !ctx.actors.has(text(o.actor))) add('warning', id, 'actor', 0, sm('check.actorUndeclared', { actor: text(o.actor) }));
+      if (text(o.flag) && !isFlagName(text(o.flag))) add('warning', id, 'flag', 0, sm('check.flagName', { flag: text(o.flag) }));
     }
     if (o?.type === 'event') {
       const on = o.on;
-      if (!hasScript(o.run)) add('warning', id, 'run', 0, 'the event has no script');
-      if (on === 'time' && !(typeof o.at === 'number' && o.at >= 0 && o.at <= 24)) add('error', id, 'at', 0, 'a clock event needs "At hour" (0–24)');
-      if (on === 'cleared' && !text(o.group)) add('error', id, 'group', 0, 'a "group defeated" event needs the enemy group\'s id');
-      else if (on === 'cleared' && !enemyIds.has(text(o.group))) add('warning', id, 'group', 0, `"${text(o.group)}" is not an enemy group of this level`);
+      if (!hasScript(o.run)) add('warning', id, 'run', 0, sm('check.noScript'));
+      if (on === 'time' && !(typeof o.at === 'number' && o.at >= 0 && o.at <= 24)) add('error', id, 'at', 0, sm('check.clockAt'));
+      if (on === 'cleared' && !text(o.group)) add('error', id, 'group', 0, sm('check.groupMissing'));
+      else if (on === 'cleared' && !enemyIds.has(text(o.group))) add('warning', id, 'group', 0, sm('check.groupUnknown', { group: text(o.group) }));
       // (a "condition becomes true" event without its condition: conditionFieldIssues, under `if`)
-      if (on === 'use' && !(o.maxX > o.minX && o.maxZ > o.minZ)) add('error', id, 'on', 0, 'a Space event needs a rectangle with an area');
+      if (on === 'use' && !(o.maxX > o.minX && o.maxZ > o.minZ)) add('error', id, 'on', 0, sm('check.useRect'));
       // (read as `=== true`, as the game does: anything else is a foreground event)
-      if (o.background !== undefined && typeof o.background !== 'boolean') add('warning', id, 'background', 0, '"background" must be true or false — read as false (the event holds the player)');
+      if (o.background !== undefined && typeof o.background !== 'boolean') add('warning', id, 'background', 0, sm('check.backgroundBool'));
     }
     for (const { field, v, nodes, errors, r } of scripts.get(o) ?? []) {
       for (const e of errors) add('error', id, field, e.line, e.msg);
@@ -541,7 +529,7 @@ export function storyIssues(level, ctx = {}) {
       if (o.type === 'event' && field === 'run' && o.background === true) for (const e of backgroundErrors(nodes)) add('error', id, field, e.line, e.msg);
       // `home` gives a villager a home: the player has none (the game stops the script there)
       walkNodes(nodes, (n) => {
-        if (n.t === 'cmd' && n.op === 'home' && isPlayerName(n.args?.who)) add('error', id, field, n.line, '"home" needs a villager — the player has no home');
+        if (n.t === 'cmd' && n.op === 'home' && isPlayerName(n.args?.who)) add('error', id, field, n.line, sm('check.homePlayer'));
       });
       // (a script that travels may go on in another level: names of the story's actors pass there)
       const travels = r.travels.length > 0;
@@ -561,23 +549,19 @@ export function storyIssues(level, ctx = {}) {
         if (isVillager(a) || isMember(a)) continue;
         if (!staged.has(a)) {
           // `visits:<actor>` — any villager or actor of the story
-          if (!isStoryActor(a)) add('warning', id, field, 0, `"${a}" is no villager, actor or "player" of this level`);
-        } else if (!isStoryActor(a)) add('warning', id, field, 0, `"${a}" is no villager, actor or "player" of this level`);
-        else if (!travels) add('warning', id, field, 0, `"${a}" is an actor of the story files, but no villager of this level is — walk / teleport / face / home stop the script here (emote, bark and wait do nothing)`);
+          if (!isStoryActor(a)) add('warning', id, field, 0, sm('check.unknownActor', { a }));
+        } else if (!isStoryActor(a)) add('warning', id, field, 0, sm('check.unknownActor', { a }));
+        else if (!travels) add('warning', id, field, 0, sm('check.actorNotHere', { a }));
       }
       // `party join <who>`: a villager of this level (else the game refuses it with a warning)
       for (const a of r.joins) {
         if (isVillager(a) || (isStoryActor(a) && travels)) continue;
-        add('warning', id, field, 0, isStoryActor(a)
-          ? `"${a}" is an actor of the story files, but no villager of this level is — "party join" is refused here (a warning; the script goes on)`
-          : `"${a}" is no villager of this level — "party join" is refused (a warning; the script goes on)`);
+        add('warning', id, field, 0, sm(isStoryActor(a) ? 'check.joinActor' : 'check.joinUnknown', { a }));
       }
       for (const t of r.targets) {
         if (places.has(t) || isVillager(t) || isMember(t)) continue;
         if (isStoryActor(t) && travels) continue;
-        add('warning', id, field, 0, isStoryActor(t)
-          ? `"${t}" is an actor of the story files, but no villager of this level is — a walk, teleport or camera to it stops the script here`
-          : `"${t}" names no object, villager, entrance or marker of this level`);
+        add('warning', id, field, 0, sm(isStoryActor(t) ? 'check.targetActor' : 'check.targetUnknown', { a: t }));
       }
       // (a quoted name is meant as written; each unknown name is reported once, at its first line)
       const named = new Set();
@@ -585,13 +569,13 @@ export function storyIssues(level, ctx = {}) {
         if (quoted || named.has(s.toLowerCase())) continue;
         named.add(s.toLowerCase());
         if (isVillager(s) || isStoryActor(s) || isMember(s)) continue;
-        add('warning', id, field, line, `speaker "${s}" is no villager or actor here (shown as written; quote it — "${s}": — to say so)`);
+        add('warning', id, field, line, sm('check.speaker', { s }));
       }
       for (const i of refIssues(r, ctx, local)) add(i.severity, id, field, 0, i.msg);
       if (ctx.scripts) {
-        for (const s of r.scripts) if (!ctx.scripts.has(s)) add('error', id, field, 0, `script "${s}" is not in the story files`);
-      } else if (r.scripts.size) add('warning', id, field, 0, '"call" needs a campaign\'s story files');
-      if (ctx.levels) for (const t of r.travels) if (!ctx.levels.has(t.level)) add('error', id, field, t.line, `travel: "${t.level}" is not a level of the campaign`);
+        for (const s of r.scripts) if (!ctx.scripts.has(s)) add('error', id, field, 0, sm('check.scriptMissing', { s }));
+      } else if (r.scripts.size) add('warning', id, field, 0, sm('check.callNoStory'));
+      if (ctx.levels) for (const t of r.travels) if (!ctx.levels.has(t.level)) add('error', id, field, t.line, sm('check.travelLevel', { level: t.level }));
       // `once` and `cycle` / `seq` / `pick` keys are global: two scripts with one key share it
       // (the villagers of one actor are one character: their talk scripts count as one)
       const ident = o.type === 'npc' && field === 'talk' && text(o.actor) ? `actor:${text(o.actor).toLowerCase()}` : `${id}\u0000${field}`;
@@ -614,9 +598,7 @@ export function storyIssues(level, ctx = {}) {
  * @param {string} other where the other script is
  */
 export function onceKeyMessage(kind, key, other) {
-  return kind === 'once'
-    ? `once key "${key}" is also used by ${other} — keys are global: the block runs once for both together`
-    : `"${key}", the key of a cycle / seq / pick, is also used by ${other} — keys are global: they share one count of turns`;
+  return sm(kind === 'once' ? 'check.onceKey' : 'check.varyKey', { key, other });
 }
 
 /**
@@ -636,6 +618,6 @@ function hasConditionOnEntryOnly(o) {
  */
 export function formatStoryIssue(i, level) {
   const o = i.id ? level?.objects?.find((x) => x?.id === i.id) : null;
-  const who = !i.id ? 'level' : o?.type === 'npc' && text(o.name) ? `npc ${i.id} "${text(o.name)}"` : `${o?.type ?? 'object'} ${i.id}`;
-  return `${who} › ${i.field}${i.line ? `:${i.line}` : ''}: ${i.msg}`;
+  const who = !i.id ? sm('issue.level') : o?.type === 'npc' && text(o.name) ? sm('issue.npc', { id: i.id, name: text(o.name) }) : `${o?.type ?? sm('issue.object')} ${i.id}`;
+  return sm('issue.line', { who, field: i.field, line: i.line, msg: i.msg });
 }

@@ -5,6 +5,7 @@ import {
 } from './Gizmos.js';
 import { cellQuads, cellOutline, rectFill, drapedPath, drapedRect, drapedCircle, pathToSegments } from './Drape.js';
 import { ENEMY_COLORS, enemyKind, bossArena, bossGate } from './ActorPreview.js';
+import { tr, editorLang } from '../i18n.js';
 
 /**
  * @import { Level, TileRect } from '../../engine/level/types.js'
@@ -442,7 +443,7 @@ export class Overlays {
       }
       const n = enemyStartPoints(obj).length;
       const l = this.labels.create('npc');
-      l.setText(obj.name || info.label, `${kind} ×${n} · Lv${obj.level ?? 1}${obj.elite ? ' · elite' : ''}`);
+      l.setText(obj.name || info.label, `${editorLang() === 'zh' ? info.label : kind} ×${n} · Lv${obj.level ?? 1}${obj.elite ? ` · ${tr('tools.view3d.elite')}` : ''}`);
       l.el.style.borderColor = obj.elite ? ENEMY_COLORS.elite : ENEMY_COLORS.ring;
       const top = ae?.box && !ae.box.isEmpty() ? ae.box.max.y : S.groundAt(obj.x, obj.z) + 1.4;
       l.world.set(obj.x, top + 0.45, obj.z);

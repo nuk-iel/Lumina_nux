@@ -25,6 +25,7 @@ import { OBJECT_TYPES, hitTestObject, objectBounds } from '../engine/level/Objec
 import { ownValue } from '../engine/utils/own.js';
 import { storyVisible, storyValuesSummary } from './story.js';
 import { viewToggleOf } from './tools/common.js';
+import { tr, andList, commaList } from './i18n.js';
 
 /**
  * @import { LevelObject } from '../engine/level/types.js'
@@ -117,11 +118,8 @@ export function hiddenOnly(state, ids) {
 /** A type's label (its id for an unknown type). @param {string} type */
 const typeLabel = (type) => ownValue(OBJECT_TYPES, type)?.label ?? type;
 
-/** The View menu's names of its toggles. */
-const TOGGLE_LABEL = { showObjects: 'Show objects', showMarkers: 'Show markers' };
-
-/** "a", "a and b", "a, b and c". @param {string[]} list */
-const joinAnd = (list) => (list.length > 2 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list.join(' and '));
+/** The View menu's names of its toggles (as its menu items say them). */
+const toggleLabel = (/** @type {string} */ t) => (t === 'showObjects' ? tr('app.cmd.showObjects') : tr('app.hidden.markers'));
 
 /**
  * What hides the objects and how to show them again, as message parts: `by` "the story preview
@@ -134,24 +132,24 @@ const joinAnd = (list) => (list.length > 2 ? `${list.slice(0, -1).join(', ')} an
  */
 function why(state, objs) {
   const types = [...new Set(objs.filter((o) => state.view.hiddenTypes?.includes(o.type)).map((o) => typeLabel(o.type)))];
-  const toggles = [...new Set(objs.map((o) => viewToggleOf(o)).filter((t) => t && state.view[t] === false))].map((t) => TOGGLE_LABEL[t]);
+  const toggles = [...new Set(objs.map((o) => viewToggleOf(o)).filter((t) => t && state.view[t] === false))].map(toggleLabel);
   const story = objs.some((o) => !storyVisible(state, o));
   const by = [];
   const fix = [];
   if (types.length) {
-    const list = types.length > 3 ? `${types.slice(0, 3).join(', ')} …` : types.join(', ');
-    by.push(`the outliner's eye (${list} objects)`);
-    fix.push(`show ${types.length === 1 ? `${types[0]} objects` : 'those types'} again`);
+    const list = types.length > 3 ? tr('app.hidden.typesMore', { list: commaList(types.slice(0, 3)) }) : commaList(types);
+    by.push(tr('app.hidden.byType', { list }));
+    fix.push(types.length === 1 ? tr('app.hidden.fixType', { type: types[0] }) : tr('app.hidden.fixTypes'));
   }
   if (toggles.length) {
-    by.push(`View › ${toggles.join(' and ')} (off)`);
-    fix.push(`turn View › ${toggles.join(' and ')} on`);
+    by.push(tr('app.hidden.byView', { toggles: andList(toggles) }));
+    fix.push(tr('app.hidden.fixView', { toggles: andList(toggles) }));
   }
   if (story) {
-    by.push(`the story preview (${storyValuesSummary(state)})`);
-    fix.push('turn the preview off');
+    by.push(tr('app.hidden.byStory', { values: storyValuesSummary(state) }));
+    fix.push(tr('app.hidden.fixStory'));
   }
-  return { by: joinAnd(by), fix: joinAnd(fix) };
+  return { by: andList(by), fix: andList(fix) };
 }
 
 /**
@@ -166,7 +164,7 @@ export function hiddenMessage(state, id) {
   const o = id === 'spawn' ? null : state.getObject(id);
   if (!o || !isHidden(state, o)) return '';
   const w = why(state, [o]);
-  return `${id} is hidden by ${w.by} — ${w.fix} to edit it`;
+  return tr('app.hidden.one', { id, by: w.by, fix: w.fix });
 }
 
 /**
@@ -188,15 +186,20 @@ export function notifyHidden(state, message, ids) {
  * story preview (…) were left out — turn the preview off to edit them".
  * @param {EditorState} state
  * @param {string[]} ids hidden ids
- * @param {[string, string]} [verb] what happened to them: for one object, for several
+ * @param {'leftOut'|'leftSelection'|'notSelected'} [how] what happened to them: left out of a new
+ *   selection ("was left out"), dropped from the selection ("left the selection"), not selected
+ *   ("is not selected")
  * @returns {string}
  */
-export function leftOutMessage(state, ids, verb = ['was left out', 'were left out']) {
+export function leftOutMessage(state, ids, how = 'leftOut') {
   const objs = ids.map((id) => state.getObject(id)).filter((o) => o && isHidden(state, o));
   if (!objs.length) return '';
   const w = why(state, objs);
-  if (objs.length === 1) return `${objs[0].id} ${verb[0]}: hidden by ${w.by} — ${w.fix} to edit it`;
-  return `${objs.length} objects hidden by ${w.by} ${verb[1]} — ${w.fix} to edit them`;
+  const one = objs.length === 1;
+  const v = { id: objs[0].id, n: objs.length, by: w.by, fix: w.fix };
+  if (how === 'leftSelection') return one ? tr('app.hidden.leftSelection.one', v) : tr('app.hidden.leftSelection.many', v);
+  if (how === 'notSelected') return one ? tr('app.hidden.notSelected.one', v) : tr('app.hidden.notSelected.many', v);
+  return one ? tr('app.hidden.leftOut.one', v) : tr('app.hidden.leftOut.many', v);
 }
 
 /**

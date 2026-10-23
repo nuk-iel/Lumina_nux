@@ -2,6 +2,7 @@ import { ICONS } from '../icons.js';
 import { brushCells, lineCells, clipCells, cellKey, tileLabel, tileColor } from './common.js';
 import { getTile, getHeightLevel } from '../../engine/level/LevelFormat.js';
 import { ownValue } from '../../engine/utils/own.js';
+import { tr } from '../i18n.js';
 
 /** @import { Tool, ToolPreview } from './index.js' */
 
@@ -24,7 +25,7 @@ export function pickTileAt(state, ev, { height = true } = {}) {
   if (ch == null) return false;
   state.setToolOption('tile', ch);
   if (height) state.setToolOption('heightValue', getHeightLevel(state.level, ev.i, ev.j));
-  state.notify(`Picked ${tileLabel(state.level, ch)} · level ${getHeightLevel(state.level, ev.i, ev.j)}`);
+  state.notify(tr('tools.msg.pickedTile', { tile: tileLabel(state.level, ch), level: getHeightLevel(state.level, ev.i, ev.j) }));
   return true;
 }
 
@@ -39,16 +40,17 @@ function stamp(state, points) {
   const clipped = clipCells(state.level, cells).filter((c) => !stroke.painted.has(cellKey(c.i, c.j)));
   if (!clipped.length) return;
   for (const c of clipped) stroke.painted.add(cellKey(c.i, c.j));
-  state.editTiles(clipped.map((c) => ({ i: c.i, j: c.j, tile, height: paintHeight ? heightValue : null })), 'Paint');
+  state.editTiles(clipped.map((c) => ({ i: c.i, j: c.j, tile, height: paintHeight ? heightValue : null })), tr('tools.undo.paint'));
 }
 
 /** @type {Tool} */
 export const PaintTool = {
   id: 'paint',
-  label: 'Paint tiles',
+  get label() { return tr('tools.paint.label'); },
   shortcut: 'B',
   icon: ICONS.brush,
-  help: 'Paint tiles — drag to paint · Shift+click: straight line · Alt+click: pick tile · [ / ] brush size',
+  get help() { return tr('tools.help', { name: tr('tools.paint.name'), tip: tr('tools.paint.tip') }); },
+  get tip() { return tr('tools.paint.tip'); },
   cursor: 'crosshair',
 
   activate() { stroke = null; },
@@ -56,7 +58,7 @@ export const PaintTool = {
 
   pointerDown(ev, state) {
     if (ev.alt) { pickTileAt(state, ev); return; }
-    state.begin('Paint');
+    state.begin(tr('tools.undo.paint'));
     stroke = { last: { i: ev.i, j: ev.j }, painted: new Set() };
     if (ev.shift && lastPoint) stamp(state, lineCells(lastPoint.i, lastPoint.j, ev.i, ev.j));
     else stamp(state, [{ i: ev.i, j: ev.j }]);

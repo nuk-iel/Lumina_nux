@@ -7,6 +7,7 @@ import { OBJECT_TYPES, objectBounds, objectCenter } from '../../engine/level/Obj
 import { arenaOf, gateOf, isBossGroup, enemyArena, enemyGate } from '../enemyGroups.js';
 import { storyVisible } from '../story.js';
 import { hiddenAt, hiddenMessage, isHidden, leftOutMessage, notifyHidden } from '../visibility.js';
+import { tr, trn } from '../i18n.js';
 
 /**
  * @import { Tool, ToolPreview } from './index.js'
@@ -156,10 +157,11 @@ function reset() { mode = null; move = null; box = null; handle = null; }
 /** @type {Tool} */
 export const SelectTool = {
   id: 'select',
-  label: 'Select / Move',
+  get label() { return tr('tools.select.label'); },
   shortcut: 'V',
   icon: ICONS.select,
-  help: 'Select — click / Shift+click add / Ctrl+click toggle / drag empty space to box-select · drag to move (Alt: no snap) · R rotate · Del delete · Ctrl+D duplicate · arrows nudge',
+  get help() { return tr('tools.help', { name: tr('tools.select.name'), tip: tr('tools.select.tip') }); },
+  get tip() { return tr('tools.select.tip'); },
   cursor: 'default',
 
   activate() { reset(); },
@@ -193,7 +195,7 @@ export const SelectTool = {
         handle.arena0 = enemyArena(o);
         handle.gate0 = enemyGate(o);
       }
-      state.begin('Reshape');
+      state.begin(tr('tools.undo.reshape'));
       return;
     }
     let hitId = ev.hitSpawn ? 'spawn' : ev.hitObjectId;
@@ -234,7 +236,7 @@ export const SelectTool = {
       if (!move.started) {
         if (Math.hypot(dx, dz) < (ev.pickRadius ?? DEFAULT_PICK) * 0.6) return;
         move.started = true;
-        state.begin('Move');
+        state.begin(tr('tools.undo.move'));
       }
       let step = snapStep(state, ev, move.anchorType);
       let tx;
@@ -256,7 +258,7 @@ export const SelectTool = {
       const ddx = tidy(tx - move.applied.dx);
       const ddz = tidy(tz - move.applied.dz);
       if (ddx || ddz) {
-        state.moveObjects(move.ids, ddx, ddz, 'Move');
+        state.moveObjects(move.ids, ddx, ddz, tr('tools.undo.move'));
         move.applied = { dx: tx, dz: tz };
       }
       state.emit('preview');
@@ -307,7 +309,7 @@ export const SelectTool = {
           return;
         }
         Object.assign(o, { minX: tidy(minX), maxX: tidy(maxX), minZ: tidy(minZ), maxZ: tidy(maxZ) });
-      }, 'Reshape');
+      }, tr('tools.undo.reshape'));
       state.emit('preview');
       return;
     }
@@ -321,7 +323,7 @@ export const SelectTool = {
       if (move.started) {
         state.commit();
         const { dx, dz } = move.applied;
-        if (dx || dz) state.notify(`Moved ${move.ids.length === 1 ? move.ids[0] : `${move.ids.length} objects`} by ${dx}, ${dz}`);
+        if (dx || dz) state.notify(tr('tools.msg.moved', { what: move.ids.length === 1 ? move.ids[0] : trn('tools.objects', move.ids.length), dx, dz }));
       } else if (!ev.cancelled && !move.modifier && move.wasSelected && state.selection.length > 1) {
         // a click (no drag) on a member of a multi-selection selects just that object
         state.select([move.clickId]);
@@ -341,7 +343,7 @@ export const SelectTool = {
         if (box.toggle) state.select(ids, { toggle: true });
         else state.select(ids, { additive: box.additive });
         const left = hidden.length ? leftOutMessage(state, hidden) : '';
-        if (ids.length || left) state.notify(`${state.selection.length} selected${left ? ` · ${left}` : ''}`);
+        if (ids.length || left) state.notify(`${tr('tools.msg.selected', { n: state.selection.length })}${left ? ` · ${left}` : ''}`);
       }
     } else if (mode === 'handle') {
       state.commit();
@@ -384,7 +386,7 @@ export const SelectTool = {
       if (box.key !== key) { box.key = key; box.ids = idsInBox(state, b).ids; }
       const ids = box.ids;
       const n = ids.length;
-      return { rect: b, label: n ? `${n} object${n === 1 ? '' : 's'}` : null, highlight: n && n <= MAX_HIGHLIGHT ? { ids, color: 'rgba(255,255,255,0.75)' } : null };
+      return { rect: b, label: n ? trn('tools.objects', n) : null, highlight: n && n <= MAX_HIGHLIGHT ? { ids, color: 'rgba(255,255,255,0.75)' } : null };
     }
     if (mode === 'move' && move.started) {
       const c = move.ids.length === 1 && move.ids[0] !== 'spawn' ? state.getObject(move.ids[0]) : null;
@@ -395,13 +397,13 @@ export const SelectTool = {
       const o = state.getObject(handle.id);
       if (!o) return null;
       const def = OBJECT_TYPES[o.type];
-      if (def.placement === 'line') return { label: `Length ${Math.hypot(o.x1 - o.x0, o.z1 - o.z0).toFixed(2)}` };
+      if (def.placement === 'line') return { label: tr('tools.preview.length', { len: Math.hypot(o.x1 - o.x0, o.z1 - o.z0).toFixed(2) }) };
       if (def.placement === 'rect') return { label: `${tidy(o.maxX - o.minX)} × ${tidy(o.maxZ - o.minZ)}` };
       if (o.type === 'enemy') {
         const g = gateOf(o);
         const a = arenaOf(o);
-        if (handle.key[0] === 'g' && g) return { label: `Gate ${Math.hypot(g[2] - g[0], g[3] - g[1]).toFixed(2)}` };
-        return a ? { label: `Arena ${tidy(Math.abs(a.maxX - a.minX))} × ${tidy(Math.abs(a.maxZ - a.minZ))}` } : null;
+        if (handle.key[0] === 'g' && g) return { label: tr('tools.preview.gate', { len: Math.hypot(g[2] - g[0], g[3] - g[1]).toFixed(2) }) };
+        return a ? { label: tr('tools.preview.arena', { w: tidy(Math.abs(a.maxX - a.minX)), d: tidy(Math.abs(a.maxZ - a.minZ)) }) } : null;
       }
       return { label: `${o.size[0]} × ${o.size[2]}` };
     }

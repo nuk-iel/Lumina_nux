@@ -11,6 +11,7 @@
  * @import { Level, LevelEnvironment } from '../engine/level/types.d.ts'
  */
 import { createEmptyLevel, levelToChar, MAX_LEVEL, DEFAULT_ENVIRONMENT } from '../engine/level/LevelFormat.js';
+import { tr } from './i18n.js';
 
 /**
  * Is this level a room (`environment.interior === true`)? = `LevelLook.isInterior`.
@@ -78,15 +79,15 @@ export const ROOM_DOOR = 2;
  */
 export function roomLookChanges(env, { cameraAuto = false } = {}) {
   const out = [];
-  if (env.border !== 'none') out.push({ key: 'border', label: 'map border none' });
-  if (env.outerScenery !== false) out.push({ key: 'outerScenery', label: 'outer scenery off' });
-  if (env.godRays !== false) out.push({ key: 'godRays', label: 'god rays off' });
+  if (env.border !== 'none') out.push({ key: 'border', label: tr('app.room.border') });
+  if (env.outerScenery !== false) out.push({ key: 'outerScenery', label: tr('app.room.outerScenery') });
+  if (env.godRays !== false) out.push({ key: 'godRays', label: tr('app.room.godRays') });
   // (a backdrop the level has — void or a colour — is kept)
   const b = backdropKind(env.backdrop);
-  if (b !== 'void' && b !== 'color') out.push({ key: 'backdrop', label: 'a dark backdrop instead of the sky' });
-  if (env.minimap !== false) out.push({ key: 'minimap', label: 'minimap off' });
-  if (env.clock !== false) out.push({ key: 'clock', label: 'clock stopped' });
-  if (cameraAuto) out.push({ key: 'camera', label: `a closer camera (${ROOM_CAMERA.distance} / ${ROOM_CAMERA.pitch}°)` });
+  if (b !== 'void' && b !== 'color') out.push({ key: 'backdrop', label: tr('app.room.backdrop') });
+  if (env.minimap !== false) out.push({ key: 'minimap', label: tr('app.room.minimap') });
+  if (env.clock !== false) out.push({ key: 'clock', label: tr('app.room.clock') });
+  if (cameraAuto) out.push({ key: 'camera', label: tr('app.room.camera', { distance: ROOM_CAMERA.distance, pitch: ROOM_CAMERA.pitch }) });
   return out;
 }
 
@@ -114,16 +115,16 @@ export function createRoomLevel(opts = {}) {
   const tiles = [];
   const heights = [];
   for (let j = 0; j < D; j++) {
-    let tr = '';
+    let tileRow = '';
     let hr = '';
     for (let i = 0; i < W; i++) {
       const south = j === D - 1;
       const door = south && i >= door0 && i < door0 + ROOM_DOOR;
       const wall = !door && (j < t || i < t || i >= W - t || south);
-      tr += wall ? 'x' : L.tiles[j][i];
+      tileRow += wall ? 'x' : L.tiles[j][i];
       hr += levelToChar(!wall ? floor : south ? low : top);
     }
-    tiles.push(tr);
+    tiles.push(tileRow);
     heights.push(hr);
   }
   L.tiles = tiles;

@@ -7,6 +7,7 @@
 // (the small condition module, not the script parser StoryScript.js: every level loads this file)
 import { cachedCondition, evalCondition, flagCondition, parseCondition, conditionRefs } from './StoryCondition.js';
 import { presenceCondition, canHoldTogether } from './StoryStates.js';
+import { lm } from './messages.js';
 
 /**
  * @import { Level, LevelObject, LevelObjectOf } from './types.js'
@@ -198,12 +199,12 @@ export function travelIssues(level) {
     return !!d && !d.void && !d.water && d.walkable !== false;
   };
   for (const o of levelExits(level)) {
-    if (!text(o.to)) out.push(`Exit "${o.id}" leads nowhere: set "Leads to level".`);
+    if (!text(o.to)) out.push(lm('travel.exitNowhere', { id: o.id }));
     let walk = false;
     for (let j = Math.max(0, Math.floor(o.minZ)); j < Math.min(level.depth, Math.ceil(o.maxZ)) && !walk; j++) {
       for (let i = Math.max(0, Math.floor(o.minX)); i < Math.min(level.width, Math.ceil(o.maxX)) && !walk; i++) walk = walkTile(i, j);
     }
-    if (!walk) out.push(`Exit "${o.id}" covers no walkable ground: the player can never step into it.`);
+    if (!walk) out.push(lm('travel.exitNoGround', { id: o.id }));
   }
   /** @type {Map<string, LevelObject[]>} entrances by name */
   const seen = new Map();
@@ -212,10 +213,10 @@ export function travelIssues(level) {
     const same = seen.get(n) ?? [];
     // (two story variants of one entrance — never there together — may share a name)
     const clash = same.find((e) => !storyExclusive(e, o));
-    if (clash) out.push(`Entrances "${clash.id}" and "${o.id}" are both called "${n}": exits find only the first.`);
+    if (clash) out.push(lm('travel.entranceClash', { a: clash.id, b: o.id, name: n }));
     seen.set(n, [...same, o]);
-    if (!(o.x >= 0 && o.z >= 0 && o.x < level.width && o.z < level.depth)) out.push(`Entrance "${n}" is outside the map.`);
-    else if (!walkTile(Math.floor(o.x), Math.floor(o.z))) out.push(`Entrance "${n}" stands on ground the player cannot walk on.`);
+    if (!(o.x >= 0 && o.z >= 0 && o.x < level.width && o.z < level.depth)) out.push(lm('travel.entranceOutside', { name: n }));
+    else if (!walkTile(Math.floor(o.x), Math.floor(o.z))) out.push(lm('travel.entranceUnwalkable', { name: n }));
   }
   return out;
 }

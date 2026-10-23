@@ -10,6 +10,7 @@
  * Every load goes through `parseLevel`, so files are normalised and validated the same way.
  */
 import { parseLevel, serializeLevel } from './LevelFormat.js';
+import { lm } from './messages.js';
 
 /** @import { Level } from './types.js' */
 
@@ -149,7 +150,7 @@ export async function hasProjectApi() {
  */
 export async function listProjectLevels({ campaign = '' } = {}) {
   const r = await fetch(levelsApi(campaign), { cache: 'no-store' });
-  if (!r.ok) throw new Error(`Level API: HTTP ${r.status}`);
+  if (!r.ok) throw new Error(lm('storage.apiHttp', { status: r.status }));
   return (await r.json()).levels ?? [];
 }
 
@@ -160,7 +161,7 @@ export async function listProjectLevels({ campaign = '' } = {}) {
  */
 export async function listProjectCampaigns() {
   const r = await fetch(`${siteBase()}api/campaigns`, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`Level API: HTTP ${r.status}`);
+  if (!r.ok) throw new Error(lm('storage.apiHttp', { status: r.status }));
   return (await r.json()).campaigns ?? [];
 }
 
@@ -183,7 +184,7 @@ export async function saveProjectLevel(name, level, { campaign = '' } = {}) {
     const text = await r.text().catch(() => '');
     let msg = text;
     try { msg = JSON.parse(text)?.error ?? text; } catch { /* plain text */ }
-    throw new Error(msg || `HTTP ${r.status}`);
+    throw new Error(msg || lm('storage.http', { status: r.status }));
   }
   return (await r.json()).file;
 }
@@ -194,12 +195,13 @@ export async function saveProjectLevel(name, level, { campaign = '' } = {}) {
  */
 export async function deleteProjectLevel(name, { campaign = '' } = {}) {
   const r = await fetch(`${levelsApi(campaign)}/${encodeURIComponent(slugify(name))}`, { method: 'DELETE' });
-  if (!r.ok) throw new Error(`Delete failed: HTTP ${r.status}`);
+  if (!r.ok) throw new Error(lm('storage.deleteFailed', { status: r.status }));
 }
 
 /**
  * Load a published level `levels/<name>.json` — or `campaigns/<campaign>/levels/<name>.json`
  * (works in dev and in production builds, since files in public/ are copied to dist/).
+ * A missing file rejects with a `LevelNotFoundError` (its message in the page's language).
  * @param {string} name level name (slugified)
  * @param {{ campaign?: string }} [opts]
  * @returns {Promise<{ level: Level, warnings: string[] }>}
@@ -209,9 +211,21 @@ export async function loadProjectLevel(name, { campaign = '' } = {}) {
   const r = await fetch(`${siteBase()}${where}/${encodeURIComponent(slugify(name))}.json`, { cache: 'no-store' });
   // dev servers answer unknown paths with index.html (HTTP 200), so check what actually came back
   const type = r.headers.get('content-type') ?? '';
-  if (!r.ok || type.includes('text/html')) throw new Error(`Level "${name}" not found${r.ok ? '' : ` (HTTP ${r.status})`}`);
+  if (!r.ok || type.includes('text/html')) {
+    const e = /** @type {LevelNotFoundError} */ (new Error(r.ok ? lm('storage.notFound', { name }) : lm('storage.notFoundHttp', { name, status: r.status })));
+    e.code = 'level.notFound';
+    e.status = r.ok ? 0 : r.status;
+    throw e;
+  }
   return parseLevel(await r.text());
 }
+
+/**
+ * The error of a level file that is not there (`loadProjectLevel`): test `code`, not the message
+ * (it is worded in the page's language). `status`: the HTTP status, 0 when the server answered
+ * with a page (the dev server's index.html).
+ * @typedef {Error & { code: 'level.notFound', status: number }} LevelNotFoundError
+ */
 
 // ---------------------------------------------------------------------------------------------
 // Files
@@ -281,7 +295,7 @@ export async function resolveLevelFromURL(search = typeof location !== 'undefine
   if (q.startsWith('local:')) {
     const slot = q.slice(6);
     const r = loadLocalLevel(slot);
-    if (!r) throw new Error(`No level "${slot}" in this browser's storage`);
+    if (!r) throw new Error(lm('storage.noLocal', { slot }));
     return { ...r, source: `local:${slot}` };
   }
   const r = await loadProjectLevel(q);

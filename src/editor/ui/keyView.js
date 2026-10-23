@@ -9,6 +9,7 @@
  */
 import { h, icon, clear } from './dom.js';
 import { ICONS } from '../icons.js';
+import { tr } from '../i18n.js';
 
 /** @import { TextRow } from '../textKeys.js' */
 
@@ -19,9 +20,9 @@ import { ICONS } from '../icons.js';
  * @param {boolean} pages does the field hold pages (a `lines` or dialogue field)?
  */
 export function rowPlace(row, pages) {
-  if (row.line != null) return `line ${row.line}`;
+  if (row.line != null) return tr('panels.keys.line', { n: row.line });
   if (row.page == null || !pages) return '';
-  return row.choice != null ? `page ${row.page + 1} › ${row.choice + 1}` : `page ${row.page + 1}`;
+  return row.choice != null ? tr('panels.keys.pageChoice', { n: row.page + 1, choice: row.choice + 1 }) : tr('panels.keys.page', { n: row.page + 1 });
 }
 
 /** At most this many characters of a text in a key line's tooltip. */
@@ -57,15 +58,15 @@ export async function copyText(text) {
 function keyLine(row, place, onCopy) {
   const tip = row.text.length > TIP ? `${row.text.slice(0, TIP - 1)}…` : row.text;
   if (!row.key) {
-    return h('div', { class: 'le-text-key is-missing', title: `“${tip}” has no text key: it shows English in every language (Level › Assign text keys gives it one)` },
-      h('span', { class: 'le-text-key-at' }, place || 'key'),
-      h('span', { class: 'le-text-key-id' }, 'no text key'));
+    return h('div', { class: 'le-text-key is-missing', title: tr('panels.keys.missingTitle', { text: tip }) },
+      h('span', { class: 'le-text-key-at' }, place || tr('panels.keys.key')),
+      h('span', { class: 'le-text-key-id' }, tr('panels.keys.none')));
   }
-  return h('div', { class: 'le-text-key', title: `Text key of “${tip}” (read-only: kept through every edit)`, dataset: { key: row.key } },
-    h('span', { class: 'le-text-key-at' }, place || 'key'),
+  return h('div', { class: 'le-text-key', title: tr('panels.keys.title', { text: tip }), dataset: { key: row.key } },
+    h('span', { class: 'le-text-key-at' }, place || tr('panels.keys.key')),
     h('code', { class: 'le-text-key-id' }, row.key),
     h('button', {
-      class: 'le-icon-btn le-text-key-copy', type: 'button', title: 'Copy the text key', tabIndex: -1, attrs: { 'aria-label': `Copy text key ${row.key}` },
+      class: 'le-icon-btn le-text-key-copy', type: 'button', title: tr('panels.keys.copy'), tabIndex: -1, attrs: { 'aria-label': tr('panels.keys.copyAria', { key: row.key }) },
       onClick: () => onCopy(row.key),
     }, icon(ICONS.copy)));
 }
@@ -90,16 +91,16 @@ export function fillKeyView(el, rows, { pages, open, onToggle, onCopy }) {
   const list = h('div', { class: 'le-text-key-list', hidden: !open }, rows.map((r) => keyLine(r, rowPlace(r, true), onCopy)));
   const toggle = h('button', {
     class: ['le-text-keys-toggle', open && 'is-open'], type: 'button', tabIndex: -1, attrs: { 'aria-expanded': String(open) },
-    title: open ? 'Hide the text keys' : 'Show the text keys (read-only)',
+    title: open ? tr('panels.keys.hide') : tr('panels.keys.show'),
     onClick: () => {
       const now = list.hidden === true;
       list.hidden = !now;
       toggle.classList.toggle('is-open', now);
       toggle.setAttribute('aria-expanded', String(now));
-      toggle.title = now ? 'Hide the text keys' : 'Show the text keys (read-only)';
+      toggle.title = now ? tr('panels.keys.hide') : tr('panels.keys.show');
       onToggle(now);
     },
   }, icon(ICONS.chevronRight, 'le-icon le-text-keys-caret'),
-  `Text keys (${rows.length})`, missing ? h('span', { class: 'le-text-keys-missing' }, ` · ${missing} without`) : null);
+  tr('panels.keys.toggle', { n: rows.length }), missing ? h('span', { class: 'le-text-keys-missing' }, tr('panels.keys.without', { n: missing })) : null);
   el.append(toggle, list);
 }

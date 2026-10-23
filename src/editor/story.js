@@ -46,6 +46,7 @@ import { buildStory } from '../game/campaign/StoryFormat.js';
 import { loadCampaign, CampaignLevels } from '../game/campaign/CampaignStorage.js';
 import { levelTexts, campaignTexts, storyFileTexts, storyTextTexts } from '../engine/i18n/TextKeys.js';
 import { textMapOf, otherTextsOf } from './textKeys.js';
+import { tr, commaList } from './i18n.js';
 
 /**
  * @import { Level, LevelObject } from '../engine/level/types.js'
@@ -90,7 +91,7 @@ export function parseStoryValues(text) {
     if (!line) return;
     const fail = (msg) => errors.push({ line: k + 1, msg });
     const m = /^([^\s=!<>]+)\s*(?:=\s*(.*))?$/.exec(line);
-    if (!m) { fail(`"${line}" is not "name" or "name = value"`); return; }
+    if (!m) { fail(tr('story.values.notNameValue', { line })); return; }
     const [, left, right] = m;
     /** @type {Ref} */
     let ref;
@@ -98,14 +99,14 @@ export function parseStoryValues(text) {
     if (colon >= 0) {
       const kind = left.slice(0, colon);
       const name = left.slice(colon + 1);
-      if (!REF_KINDS.includes(/** @type {any} */ (kind))) { fail(`unknown kind "${kind}:" (use ${REF_KINDS.map((x) => `${x}:`).join(', ')})`); return; }
-      if (!isStoryName(name)) { fail(`"${name}" is not a name`); return; }
+      if (!REF_KINDS.includes(/** @type {any} */ (kind))) { fail(tr('story.values.unknownKind', { kind, kinds: commaList(REF_KINDS.map((x) => `${x}:`)) })); return; }
+      if (!isStoryName(name)) { fail(tr('story.values.notAName', { name })); return; }
       ref = { kind: /** @type {Ref['kind']} */ (kind), name };
     } else {
       const low = left.toLowerCase();
       if (GAME_REFS.includes(/** @type {any} */ (low))) ref = { kind: 'game', name: low };
-      else if (!isStoryName(left)) { fail(`"${left}" is not a name`); return; }
-      else if (RESERVED_WORDS.has(low)) { fail(`"${left}" is a reserved word`); return; }
+      else if (!isStoryName(left)) { fail(tr('story.values.notAName', { name: left })); return; }
+      else if (RESERVED_WORDS.has(low)) { fail(tr('story.values.reserved', { name: left })); return; }
       else ref = { kind: '', name: left };
     }
     const key = `${ref.kind}:${ref.name}`;
@@ -113,25 +114,25 @@ export function parseStoryValues(text) {
     if (right === undefined) {
       // a name alone: that flag (an item: one of it; a quest: active)
       if (ref.kind === 'quest') values.set(key, 'active');
-      else if (ref.kind === 'stage' || isTextRef(ref) || ref.kind === 'game') fail(`${left} needs a value ("${left} = …")`);
+      else if (ref.kind === 'stage' || isTextRef(ref) || ref.kind === 'game') fail(tr('story.values.needsValue', { name: left }));
       else values.set(key, 1);
       return;
     }
-    if (!v) { fail(`a value is missing after "${left} ="`); return; }
+    if (!v) { fail(tr('story.values.missingValue', { name: left })); return; }
     if (NUMBER.test(v)) {
-      if (isTextRef(ref)) { fail(`${left} is a word, not a number`); return; }
+      if (isTextRef(ref)) { fail(tr('story.values.wordNotNumber', { name: left })); return; }
       if (ref.kind === 'stage') { values.set(key, v); return; }
       values.set(key, Number(v));
       return;
     }
     if (v === 'true' || v === 'false') {
-      if (isTextRef(ref) || ref.kind === 'stage') { fail(`${left} = ${v}: a word is expected`); return; }
+      if (isTextRef(ref) || ref.kind === 'stage') { fail(tr('story.values.wordExpected', { name: left, value: v })); return; }
       values.set(key, v === 'true' ? 1 : 0);
       return;
     }
-    if (!isStoryName(v)) { fail(`"${v}" is not a value`); return; }
-    if (ref.kind === 'quest' && !QUEST_STATES.includes(/** @type {any} */ (v))) { fail(`a quest is ${QUEST_STATES.join(', ')} — not "${v}"`); return; }
-    if (!isTextRef(ref) && ref.kind !== 'stage') { fail(`${left} is a number, not "${v}"`); return; }
+    if (!isStoryName(v)) { fail(tr('story.values.notAValue', { value: v })); return; }
+    if (ref.kind === 'quest' && !QUEST_STATES.includes(/** @type {any} */ (v))) { fail(tr('story.values.questState', { states: commaList([...QUEST_STATES]), value: v })); return; }
+    if (!isTextRef(ref) && ref.kind !== 'stage') { fail(tr('story.values.numberNotWord', { name: left, value: v })); return; }
     values.set(key, v);
   });
   return { values, errors };
@@ -728,7 +729,7 @@ export function conditionIssues(state, o, field, src) {
 export function storyValuesSummary(state) {
   const parts = String(state.view.storyValues ?? '').split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim()).filter(Boolean);
   const s = parts.join(', ');
-  if (!s) return 'no values';
+  if (!s) return tr('story.values.none');
   return s.length > 60 ? `${s.slice(0, 59).trimEnd()}…` : s;
 }
 

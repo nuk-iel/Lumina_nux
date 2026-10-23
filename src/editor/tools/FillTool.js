@@ -1,6 +1,7 @@
 import { ICONS } from '../icons.js';
 import { floodRegion, tileLabel } from './common.js';
 import { pickTileAt, tilePreviewColor } from './PaintTool.js';
+import { tr, trn } from '../i18n.js';
 
 /** @import { Tool, ToolPreview } from './index.js' */
 
@@ -21,10 +22,11 @@ function region(state, i, j, global) {
 /** @type {Tool} */
 export const FillTool = {
   id: 'fill',
-  label: 'Fill',
+  get label() { return tr('tools.fill.label'); },
   shortcut: 'G',
   icon: ICONS.fill,
-  help: 'Fill — click to flood-fill the connected area of the same tile · Shift+click: replace everywhere · Alt+click: pick tile',
+  get help() { return tr('tools.help', { name: tr('tools.fill.name'), tip: tr('tools.fill.tip') }); },
+  get tip() { return tr('tools.fill.tip'); },
   cursor: 'crosshair',
 
   activate(state) {
@@ -39,9 +41,9 @@ export const FillTool = {
     const cells = region(state, ev.i, ev.j, ev.shift);
     if (!cells.length) return;
     const { tile, paintHeight, heightValue } = state.toolOptions;
-    const n = state.editTiles(cells.map((c) => ({ i: c.i, j: c.j, tile, height: paintHeight ? heightValue : null })), ev.shift ? 'Replace tiles' : 'Fill');
+    const n = state.editTiles(cells.map((c) => ({ i: c.i, j: c.j, tile, height: paintHeight ? heightValue : null })), ev.shift ? tr('tools.undo.replaceTiles') : tr('tools.undo.fill'));
     cache = null;
-    state.notify(n ? `Filled ${n} tile${n === 1 ? '' : 's'} with ${tileLabel(state.level, tile)}` : 'Nothing to fill');
+    state.notify(n ? trn('tools.msg.filled', n, { tile: tileLabel(state.level, tile) }) : tr('tools.msg.nothingToFill'));
     state.emit('preview');
   },
 
@@ -57,7 +59,8 @@ export const FillTool = {
   preview(state) {
     if (!state.hover || !hover || !state.inBounds(hover.i, hover.j)) return null;
     const cells = region(state, hover.i, hover.j, hover.shift);
-    const label = `${hover.shift ? 'Replace' : 'Fill'} ${cells.length} tile${cells.length === 1 ? '' : 's'} → ${tileLabel(state.level, state.toolOptions.tile)}`;
+    const tile = tileLabel(state.level, state.toolOptions.tile);
+    const label = hover.shift ? trn('tools.preview.replace', cells.length, { tile }) : trn('tools.preview.fill', cells.length, { tile });
     if (cells.length > PREVIEW_LIMIT) return { cells: [{ i: hover.i, j: hover.j }], cellColor: tilePreviewColor(state, state.toolOptions.tile), label };
     return { cells, cellColor: tilePreviewColor(state, state.toolOptions.tile).replace(/[\d.]+\)$/, '0.4)'), label };
   },

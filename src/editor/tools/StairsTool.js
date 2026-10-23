@@ -1,6 +1,7 @@
 import { ICONS } from '../icons.js';
 import { lineCells, cellKey } from './common.js';
 import { getTile } from '../../engine/level/LevelFormat.js';
+import { tr, trn } from '../i18n.js';
 
 /**
  * @import { Level } from '../../engine/level/types.js'
@@ -218,7 +219,7 @@ function apply(state) {
     const height = p ? p.level : stroke.heightOf(c.i, c.j);
     if (state.getTile(c.i, c.j) !== tile || state.getHeight(c.i, c.j) !== height) edits.push({ i: c.i, j: c.j, tile, height });
   }
-  if (edits.length) state.editTiles(edits, 'Stairs');
+  if (edits.length) state.editTiles(edits, tr('tools.undo.stairs'));
 }
 
 function addCells(state, cells) {
@@ -235,26 +236,27 @@ function addCells(state, cells) {
 }
 
 function strokeMessage(plan) {
-  if (plan.short > 0) return `The flight does not reach the ground yet: drag ${plan.short} more tile${plan.short === 1 ? '' : 's'} away from the cliff.`;
-  if (plan.flat) return 'No higher neighbour here — the stairs lead nowhere yet. Raise the ground on one side.';
-  if (plan.maxCliff > 1) return `The ledge is ${plan.maxCliff} levels high: drag away from it (across the cliff) over ${plan.maxCliff} tiles for a full flight of stairs.`;
+  if (plan.short > 0) return trn('tools.msg.stairsShort', plan.short);
+  if (plan.flat) return tr('tools.msg.stairsFlat');
+  if (plan.maxCliff > 1) return tr('tools.msg.stairsCliff', { n: plan.maxCliff });
   return '';
 }
 
 /** @type {Tool} */
 export const StairsTool = {
   id: 'stairs',
-  label: 'Stairs',
+  get label() { return tr('tools.stairs.label'); },
   shortcut: 'T',
   icon: ICONS.stairs,
-  help: 'Stairs — click / drag on a ledge: the stairs rise toward the higher neighbour · drag across a cliff (from its foot to its top) for a full flight, one level per tile',
+  get help() { return tr('tools.help', { name: tr('tools.stairs.name'), tip: tr('tools.stairs.tip') }); },
+  get tip() { return tr('tools.stairs.tip'); },
   cursor: 'crosshair',
 
   activate() { stroke = null; },
   deactivate(state) { if (stroke) { stroke = null; state.commit(); } hover = null; },
 
   pointerDown(ev, state) {
-    state.begin('Stairs');
+    state.begin(tr('tools.undo.stairs'));
     stroke = { cells: [], keys: new Set(), heightOf: snapshotHeights(state.level), tileOf: snapshotTiles(state.level), last: { i: ev.i, j: ev.j }, plan: null };
     if (addCells(state, [{ i: ev.i, j: ev.j }])) apply(state);
     state.emit('preview');
@@ -288,16 +290,16 @@ export const StairsTool = {
       return {
         cells: [{ i: hover.i, j: hover.j }],
         cellColor: 'rgba(230,220,200,0.55)',
-        label: `Stairs ${ARROWS[planned.dir]} ${planned.dir} · level ${planned.level} → ${planned.level + 1}`,
+        label: tr('tools.preview.stairs', { arrow: ARROWS[planned.dir], dir: planned.dir, from: planned.level, to: planned.level + 1 }),
       };
     }
     const heightOf = stroke?.heightOf ?? snapshotHeights(state.level);
     const s = stairsFor(state.level, hover.i, hover.j, heightOf, state.toolOptions.stairsDir ?? 'auto');
-    const tall = s.ok && s.cliff > 1 ? ` · ledge ${s.cliff} high: drag ${s.cliff} tiles away from it` : '';
+    const tall = s.ok && s.cliff > 1 ? ` · ${tr('tools.preview.stairsTall', { n: s.cliff })}` : '';
     return {
       cells: [{ i: hover.i, j: hover.j }],
       cellColor: s.ok ? 'rgba(230,220,200,0.55)' : 'rgba(255,120,100,0.45)',
-      label: `Stairs ${ARROWS[s.dir]} ${s.dir} · level ${s.level} → ${s.level + 1}${s.ok ? tall : ' (no ledge)'}`,
+      label: `${tr('tools.preview.stairs', { arrow: ARROWS[s.dir], dir: s.dir, from: s.level, to: s.level + 1 })}${s.ok ? tall : tr('tools.preview.noLedge')}`,
     };
   },
 };

@@ -41,6 +41,8 @@ import { stripScriptTags } from '../../engine/i18n/TextKeys.js';
 import { textRows, textFieldsOf } from '../textKeys.js';
 import { fillKeyView, copyText } from './keyView.js';
 import { selectLine } from './scriptEditor.js';
+import { tr } from '../i18n.js';
+import { categoryLabel, catalogText } from '../catalogI18n.js';
 
 /**
  * @import { EditorState } from '../EditorState.js'
@@ -48,7 +50,9 @@ import { selectLine } from './scriptEditor.js';
  */
 
 const LIGHT_TYPES = new Set(['lamppost', 'wallTorch', 'campfire', 'light']);
-const WEATHER = [{ value: 'clear', label: 'Clear' }, { value: 'rain', label: 'Rain' }, { value: 'snow', label: 'Snow' }];
+const weatherOptions = () => [
+  { value: 'clear', label: tr('panels.weather.clear') }, { value: 'rain', label: tr('panels.weather.rain') }, { value: 'snow', label: tr('panels.weather.snow') },
+];
 
 /** Number of objects that request a point light (a hearth while its fire burns, `opts.lit`). */
 export function countLights(level) {
@@ -87,8 +91,8 @@ export class Inspector {
   constructor(host, state, actions) {
     this.state = state;
     this.actions = actions;
-    this.el = h('section', { class: 'le-panel le-inspector', 'aria-label': 'Inspector' });
-    this.header = h('div', { class: 'le-panel-header' }, icon(ICONS.settings, 'le-icon le-panel-header-icon'), h('span', { class: 'le-panel-title' }, 'Inspector'));
+    this.el = h('section', { class: 'le-panel le-inspector', 'aria-label': tr('panels.inspector.title') });
+    this.header = h('div', { class: 'le-panel-header' }, icon(ICONS.settings, 'le-icon le-panel-header-icon'), h('span', { class: 'le-panel-title' }, tr('panels.inspector.title')));
     this.headerNote = h('span', { class: 'le-panel-note' });
     this.header.appendChild(this.headerNote);
     this.body = h('div', { class: 'le-panel-body le-scroll' });
@@ -147,7 +151,7 @@ export class Inspector {
     else if (sel.length === 1 && sel[0] === 'spawn') this._renderSpawn();
     else if (sel.length === 1 && objs.length === 1) this._renderObject(objs[0]);
     else this._renderMulti(objs, sel.includes('spawn'));
-    this.headerNote.textContent = sel.length > 1 ? `${sel.length} selected` : sel.length === 1 ? (sel[0] === 'spawn' ? 'Player start' : objs[0]?.id ?? '') : 'Level';
+    this.headerNote.textContent = sel.length > 1 ? tr('panels.inspector.nSelected', { n: sel.length }) : sel.length === 1 ? (sel[0] === 'spawn' ? tr('panels.playerStart') : objs[0]?.id ?? '') : tr('panels.inspector.level');
     // scrollTop is only clamped at layout time, so reset it explicitly for a new selection
     this.body.scrollTop = this._lastSel === sel.join('|') ? scroll : 0;
     this._lastSel = sel.join('|');
@@ -182,7 +186,7 @@ export class Inspector {
       value: get(), min, max, step, nullable, slider,
       onChange: (v) => set(v, false),
       onInput: (v) => set(v, true),
-      onBegin: () => { live = true; this.state.begin(`Edit ${label}`); },
+      onBegin: () => { live = true; this.state.begin(tr('panels.inspector.undoEdit', { label })); },
       onEnd: () => { if (live) { live = false; this.state.commit(); } },
     });
     this._bind(() => ctl.set(get()));
@@ -206,12 +210,12 @@ export class Inspector {
       onChange: (v) => {
         const nv = String(v).trim().replace(/\s+/g, '_');
         if (!nv || nv === id) { idCtl.set(id); return; }
-        if (!/^[\w-]+$/.test(nv)) { st.notify('Ids may contain letters, digits, _ and -'); idCtl.set(id); return; }
-        if (nv === 'spawn') { st.notify('“spawn” is reserved for the player start — choose another id'); idCtl.set(id); return; }
-        if (st.getObject(nv)) { st.notify(`Id "${nv}" is already used`); idCtl.set(id); return; }
+        if (!/^[\w-]+$/.test(nv)) { st.notify(tr('panels.inspector.idChars')); idCtl.set(id); return; }
+        if (nv === 'spawn') { st.notify(tr('panels.inspector.idReserved')); idCtl.set(id); return; }
+        if (st.getObject(nv)) { st.notify(tr('panels.inspector.idUsed', { id: nv })); idCtl.set(id); return; }
         // select inside the transaction so undo / redo restore the matching selection
-        st.begin('Rename');
-        st.updateObject(id, (ob) => { ob.id = nv; }, 'Rename');
+        st.begin(tr('panels.inspector.undoRename'));
+        st.updateObject(id, (ob) => { ob.id = nv; }, tr('panels.inspector.undoRename'));
         st.select(st.selection.map((s) => (s === id ? nv : s)));
         st.commit();
       },
@@ -219,8 +223,8 @@ export class Inspector {
     this.body.appendChild(h('div', { class: 'le-card le-obj-card' },
       glyphBadge(o.type, 'xl'),
       h('div', { class: 'le-obj-titles' },
-        h('div', { class: 'le-obj-type' }, def.label, h('span', { class: 'le-chip' }, def.category)),
-        h('div', { class: 'le-obj-id' }, h('span', { class: 'le-obj-id-label' }, 'id'), idCtl.el)),
+        h('div', { class: 'le-obj-type' }, def.label, h('span', { class: 'le-chip' }, categoryLabel(def.category))),
+        h('div', { class: 'le-obj-id' }, h('span', { class: 'le-obj-id-label' }, tr('panels.inspector.id')), idCtl.el)),
     ));
     if (def.help) this.body.appendChild(h('p', { class: 'le-hint le-pad' }, def.help));
 
@@ -237,20 +241,20 @@ export class Inspector {
             if (ob.minX > ob.maxX) [ob.minX, ob.maxX] = [ob.maxX, ob.minX];
             if (ob.minZ > ob.maxZ) [ob.minZ, ob.maxZ] = [ob.maxZ, ob.minZ];
           }
-        }, def.placement === 'rect' ? 'Resize area' : 'Move');
+        }, def.placement === 'rect' ? tr('panels.inspector.undoResizeArea') : tr('panels.inspector.undoMove'));
       },
       step: 0.5, ...extra,
     });
     if (def.placement === 'point') tf.push(this._pair(num('X', 'x'), num('Z', 'z')));
     else if (def.placement === 'line') {
-      tf.push(this._pair(num('Start X', 'x0'), num('Start Z', 'z0')), this._pair(num('End X', 'x1'), num('End Z', 'z1')));
+      tf.push(this._pair(num(tr('panels.inspector.startX'), 'x0'), num(tr('panels.inspector.startZ'), 'z0')), this._pair(num(tr('panels.inspector.endX'), 'x1'), num(tr('panels.inspector.endZ'), 'z1')));
       const len = h('span', { class: 'le-readout' });
-      const upd = () => { const ob = cur(); if (ob) len.textContent = `${fmt(Math.hypot(ob.x1 - ob.x0, ob.z1 - ob.z0))} units long`; };
+      const upd = () => { const ob = cur(); if (ob) len.textContent = tr('panels.inspector.unitsLong', { len: fmt(Math.hypot(ob.x1 - ob.x0, ob.z1 - ob.z0)) }); };
       upd();
       this._bind(upd);
       tf.push(len);
     } else {
-      tf.push(this._pair(num('Min X', 'minX'), num('Max X', 'maxX')), this._pair(num('Min Z', 'minZ'), num('Max Z', 'maxZ')));
+      tf.push(this._pair(num(tr('panels.inspector.minX'), 'minX'), num(tr('panels.inspector.maxX'), 'maxX')), this._pair(num(tr('panels.inspector.minZ'), 'minZ'), num(tr('panels.inspector.maxZ'), 'maxZ')));
       const size = h('span', { class: 'le-readout' });
       const upd = () => { const ob = cur(); if (ob) size.textContent = `${fmt(ob.maxX - ob.minX)} × ${fmt(ob.maxZ - ob.minZ)}`; };
       upd();
@@ -272,15 +276,15 @@ export class Inspector {
       ? [this._fieldEditor({ ...f, max: 1, slider: false }, [id]), this._bossCountHint(id)]
       : Object.hasOwn(keyed, f.key) ? [this._fieldEditor(f, [id]), this._keyView(id, f.key, keyed[f.key] !== 'text')]
         : this._fieldEditor(f, [id])));
-    if (rest.length) this.body.appendChild(this._section('Properties', props));
-    this.body.appendChild(this._section('Transform', tf));
-    if (!rest.length) this.body.appendChild(h('p', { class: 'le-hint le-pad' }, 'This object has no other properties.'));
+    if (rest.length) this.body.appendChild(this._section(tr('panels.inspector.properties'), props));
+    this.body.appendChild(this._section(tr('panels.inspector.transform'), tf));
+    if (!rest.length) this.body.appendChild(h('p', { class: 'le-hint le-pad' }, tr('panels.inspector.noProperties')));
     if (o.type === 'enemy') this.body.appendChild(this._arenaSection(id));
 
     this.body.appendChild(this._actions([
-      { label: 'Focus', icon: ICONS.focus, title: 'Centre the views on it (F)', onClick: () => this.actions.focus([id]) },
-      { label: 'Duplicate', icon: ICONS.duplicate, title: 'Ctrl+D', onClick: () => this.actions.duplicate() },
-      { label: 'Delete', icon: ICONS.trash, danger: true, title: 'Del', onClick: () => this.actions.remove() },
+      { label: tr('panels.inspector.focus'), icon: ICONS.focus, title: tr('panels.inspector.focusTitle'), onClick: () => this.actions.focus([id]) },
+      { label: tr('panels.inspector.duplicate'), icon: ICONS.duplicate, title: 'Ctrl+D', onClick: () => this.actions.duplicate() },
+      { label: tr('common.delete'), icon: ICONS.trash, danger: true, title: 'Del', onClick: () => this.actions.remove() },
     ]));
   }
 
@@ -290,10 +294,12 @@ export class Inspector {
     const upd = () => {
       const ob = this.state.getObject(id);
       const extra = ob ? bossExtraCount(ob) : 0;
-      const asked = ob && ob.count != null && ob.count !== '' ? `Count ${ob.count}` : `${extra + 1} spot offsets`;
+      // (the Count field's own label, as the field shows it)
+      const field = catalogText('Count');
+      const asked = ob && ob.count != null && ob.count !== '' ? tr('panels.boss.countValue', { field, value: ob.count }) : tr('panels.boss.spotOffsets', { n: extra + 1 });
       hint.textContent = extra
-        ? `The boss spawns alone: the game ignores the other ${extra} (${asked}). Set Count to 1.`
-        : 'The boss spawns alone: Count is 1.';
+        ? tr('panels.boss.ignored', { extra, asked, field })
+        : tr('panels.boss.alone', { field });
       hint.style.color = extra ? 'var(--le-warn)' : '';
     };
     upd();
@@ -313,32 +319,32 @@ export class Inspector {
     const edit = (fn, label) => st.updateObject(id, fn, label);
     const arenaNum = (label, key) => this._numberField(label, {
       get: () => cur()?.arena?.[key],
-      set: (v) => { if (v != null && has()) edit((ob) => { ob.arena = { ...ob.arena, [key]: v }; }, 'Edit arena'); },
+      set: (v) => { if (v != null && has()) edit((ob) => { ob.arena = { ...ob.arena, [key]: v }; }, tr('panels.arena.undoEditArena')); },
       step: 0.5,
     });
     const gateNum = (label, k) => this._numberField(label, {
       get: () => cur()?.gate?.[k],
       set: (v) => {
         if (v == null) return;
-        edit((ob) => { const g = Array.isArray(ob.gate) ? [...ob.gate] : [...DEFAULT_GATE]; g[k] = v; ob.gate = g; }, 'Edit gate');
+        edit((ob) => { const g = Array.isArray(ob.gate) ? [...ob.gate] : [...DEFAULT_GATE]; g[k] = v; ob.gate = g; }, tr('panels.arena.undoEditGate'));
       },
       step: 0.5,
     });
     const fields = h('div', null,
-      this._pair(arenaNum('Min X', 'minX'), arenaNum('Max X', 'maxX')),
-      this._pair(arenaNum('Min Z', 'minZ'), arenaNum('Max Z', 'maxZ')),
-      this._pair(gateNum('Gate X0', 0), gateNum('Gate Z0', 1)),
-      this._pair(gateNum('Gate X1', 2), gateNum('Gate Z1', 3)));
+      this._pair(arenaNum(tr('panels.inspector.minX'), 'minX'), arenaNum(tr('panels.inspector.maxX'), 'maxX')),
+      this._pair(arenaNum(tr('panels.inspector.minZ'), 'minZ'), arenaNum(tr('panels.inspector.maxZ'), 'maxZ')),
+      this._pair(gateNum(tr('panels.arena.gateX0'), 0), gateNum(tr('panels.arena.gateZ0'), 1)),
+      this._pair(gateNum(tr('panels.arena.gateX1'), 2), gateNum(tr('panels.arena.gateZ1'), 3)));
     const hint = h('p', { class: 'le-hint' });
     const addBtn = h('button', {
-      class: 'le-btn is-small', type: 'button', title: 'An 18 × 18 arena around the group with a gate in its south edge',
-      onClick: () => edit((ob) => { ob.arena = { ...DEFAULT_ARENA }; ob.gate = [...DEFAULT_GATE]; }, 'Add arena'),
-    }, icon(ICONS.plus), 'Add arena and gate');
+      class: 'le-btn is-small', type: 'button', title: tr('panels.arena.addTitle'),
+      onClick: () => edit((ob) => { ob.arena = { ...DEFAULT_ARENA }; ob.gate = [...DEFAULT_GATE]; }, tr('panels.arena.undoAdd')),
+    }, icon(ICONS.plus), tr('panels.arena.add'));
     const removeBtn = h('button', {
       class: 'le-btn is-small is-danger', type: 'button',
-      onClick: () => edit((ob) => { delete ob.arena; delete ob.gate; }, 'Remove arena'),
-    }, icon(ICONS.trash), 'Remove arena');
-    const section = this._section('Boss arena', [hint, fields, h('div', { class: 'le-actions' }, addBtn, removeBtn)]);
+      onClick: () => edit((ob) => { delete ob.arena; delete ob.gate; }, tr('panels.arena.remove')),
+    }, icon(ICONS.trash), tr('panels.arena.remove'));
+    const section = this._section(tr('panels.arena.title'), [hint, fields, h('div', { class: 'le-actions' }, addBtn, removeBtn)]);
     // (inline display: the editor's button / section styles override the hidden attribute)
     const show = (el, on) => { el.style.display = on ? '' : 'none'; };
     const upd = () => {
@@ -352,12 +358,12 @@ export class Inspector {
       const gap = boss ? gateEdgeGap(ob) : null;
       const offEdge = gap != null && gap > GATE_EDGE_TOLERANCE;
       hint.textContent = !boss
-        ? 'Only the boss (Kind golem) has an arena: the game ignores this one, and the views do not show it. Remove it, or set Kind to golem.'
+        ? tr('panels.arena.hintNotBoss', { kind: catalogText('Kind') })
         : offEdge
-          ? `The gate is not on the arena's edge (an end is ${gap.toFixed(1)} units off): its ember wall would not meet the barrier. Drag the gate ends onto the edge.`
+          ? tr('panels.arena.hintOffEdge', { gap: gap.toFixed(1) })
           : ob.arena
-            ? 'Relative to the group. The gate closes behind the player; keep it on the arena edge (it follows a dragged edge). Drag the corners and gate ends with the select tool (V).'
-            : 'The boss needs an arena (the fight is locked inside it) and a gate on its edge.';
+            ? tr('panels.arena.hintArena')
+            : tr('panels.arena.hintNeedsArena');
       hint.style.color = !boss || offEdge || (boss && (!ob.arena || !ob.gate)) ? 'var(--le-warn)' : '';
     };
     upd();
@@ -374,7 +380,7 @@ export class Inspector {
     let live = false;
     const apply = (v, isLive = false) => {
       if (v === undefined) return;
-      const label = `Edit ${field.label}`;
+      const label = tr('panels.inspector.undoEdit', { label: field.label });
       if (!isLive && !live) st.begin(label);
       // an enemy group that is (or becomes) the boss keeps Count 1 (it spawns alone)
       const clamp = field.key === 'kind' || field.key === 'count';
@@ -414,7 +420,7 @@ export class Inspector {
     const hintObject = () => (ids.length === 1 && st.getObject(ids[0])) || { type };
     const ed = createFieldEditor(rule && field.type === 'text' ? { ...field, type: 'condition' } : field, {
       value: vals[0], mixed: isMixed(vals), apply,
-      begin: () => { live = true; st.begin(`Edit ${field.label}`); },
+      begin: () => { live = true; st.begin(tr('panels.inspector.undoEdit', { label: field.label })); },
       end: () => { if (live) { live = false; st.commit(); } },
       rule: rule ?? undefined,
       check: rule ? (t) => conditionIssues(st, hintObject(), field.key, t).map((i) => i.msg) : undefined,
@@ -444,7 +450,7 @@ export class Inspector {
       fillKeyView(el, rows, {
         pages, open: this._keysOpen.has(field),
         onToggle: (open) => { if (open) this._keysOpen.add(field); else this._keysOpen.delete(field); },
-        onCopy: (key) => { copyText(key).then((ok) => st.notify(ok ? `Copied the text key ${key}` : `Text key ${key} (the clipboard is not available: select it to copy)`)); },
+        onCopy: (key) => { copyText(key).then((ok) => st.notify(ok ? tr('panels.inspector.copied', { key }) : tr('panels.inspector.copyUnavailable', { key }))); },
       });
     };
     upd();
@@ -511,31 +517,31 @@ export class Inspector {
     const n = objs.length + (withSpawn ? 1 : 0);
     this.body.appendChild(h('div', { class: 'le-card le-multi-card' },
       h('div', { class: 'le-multi-count' }, String(n)),
-      h('div', null, h('div', { class: 'le-obj-type' }, `${n} items selected`),
-        h('div', { class: 'le-hint' }, 'Edits apply to every selected object.'))));
+      h('div', null, h('div', { class: 'le-obj-type' }, tr('panels.multi.count', { n })),
+        h('div', { class: 'le-hint' }, tr('panels.multi.hint')))));
     const list = h('div', { class: 'le-type-list' });
     for (const [t, c] of counts) {
       list.appendChild(h('button', {
-        class: 'le-type-row', type: 'button', title: `Select only the ${OBJECT_TYPES[t].label} objects`,
+        class: 'le-type-row', type: 'button', title: tr('panels.multi.selectOnly', { type: OBJECT_TYPES[t].label }),
         onClick: () => this.state.select(objs.filter((o) => o.type === t).map((o) => o.id)),
       }, glyphBadge(t), h('span', null, OBJECT_TYPES[t].label), h('span', { class: 'le-count' }, String(c))));
     }
-    if (withSpawn) list.appendChild(h('div', { class: 'le-type-row' }, h('span', { class: 'le-glyph is-md', style: { '--c': SPAWN_MARKER.color } }, SPAWN_MARKER.glyph), h('span', null, 'Player start'), h('span', { class: 'le-count' }, '1')));
-    this.body.appendChild(this._section('Selection', [list]));
+    if (withSpawn) list.appendChild(h('div', { class: 'le-type-row' }, h('span', { class: 'le-glyph is-md', style: { '--c': SPAWN_MARKER.color } }, SPAWN_MARKER.glyph), h('span', null, tr('panels.playerStart')), h('span', { class: 'le-count' }, '1')));
+    this.body.appendChild(this._section(tr('panels.multi.selection'), [list]));
 
     this.body.appendChild(this._actions([
-      { label: 'Focus', icon: ICONS.focus, onClick: () => this.actions.focus(this.state.selection) },
-      { label: '−90°', icon: ICONS.rotate, title: 'Rotate −90° (Ctrl+Shift+R)', onClick: () => this.actions.rotate(-90) },
-      { label: '+90°', icon: ICONS.rotateCcw, title: 'Rotate +90° (Ctrl+R)', onClick: () => this.actions.rotate(90) },
-      objs.length ? { label: 'Duplicate', icon: ICONS.duplicate, onClick: () => this.actions.duplicate() } : null,
-      objs.length ? { label: 'Delete', icon: ICONS.trash, danger: true, onClick: () => this.actions.remove() } : null,
+      { label: tr('panels.inspector.focus'), icon: ICONS.focus, onClick: () => this.actions.focus(this.state.selection) },
+      { label: '−90°', icon: ICONS.rotate, title: tr('panels.multi.rotateCwTitle'), onClick: () => this.actions.rotate(-90) },
+      { label: '+90°', icon: ICONS.rotateCcw, title: tr('panels.multi.rotateCcwTitle'), onClick: () => this.actions.rotate(90) },
+      objs.length ? { label: tr('panels.inspector.duplicate'), icon: ICONS.duplicate, onClick: () => this.actions.duplicate() } : null,
+      objs.length ? { label: tr('common.delete'), icon: ICONS.trash, danger: true, onClick: () => this.actions.remove() } : null,
     ]));
 
     if (counts.size === 1 && !withSpawn) {
       const type = objs[0].type;
       const ids = objs.map((o) => o.id);
       const fields = OBJECT_TYPES[type].fields;
-      if (fields.length) this.body.appendChild(this._section(`Shared ${OBJECT_TYPES[type].label} properties`, fields.map((f) => this._fieldEditor(f, ids))));
+      if (fields.length) this.body.appendChild(this._section(tr('panels.multi.shared', { type: OBJECT_TYPES[type].label }), fields.map((f) => this._fieldEditor(f, ids))));
     }
   }
 
@@ -546,7 +552,7 @@ export class Inspector {
     const s = () => st.level.spawn;
     this.body.appendChild(h('div', { class: 'le-card le-obj-card' },
       h('span', { class: 'le-glyph is-xl', style: { '--c': SPAWN_MARKER.color } }, SPAWN_MARKER.glyph),
-      h('div', { class: 'le-obj-titles' }, h('div', { class: 'le-obj-type' }, 'Player start'), h('div', { class: 'le-hint' }, 'Where the player appears when the level starts.'))));
+      h('div', { class: 'le-obj-titles' }, h('div', { class: 'le-obj-type' }, tr('panels.playerStart')), h('div', { class: 'le-hint' }, tr('panels.spawn.hint')))));
     const setPos = (k) => (v) => {
       if (v == null) return;
       const p = { ...s(), [k]: v };
@@ -557,21 +563,21 @@ export class Inspector {
       const ok = isWalkableAt(st.level, s().x, s().z);
       const d = tileDef(st.level, Math.floor(s().x), Math.floor(s().z));
       const deck = ok && onBridgeDeck(st.level, s().x, s().z);
-      clear(status).append(icon(ok ? ICONS.check : ICONS.warning), ok ? (deck ? 'On a bridge deck' : 'On walkable ground') : d ? 'Not walkable — move it onto ground or a bridge' : 'Outside the map');
+      clear(status).append(icon(ok ? ICONS.check : ICONS.warning), ok ? (deck ? tr('panels.spawn.onBridge') : tr('panels.spawn.onGround')) : d ? tr('panels.spawn.notWalkable') : tr('panels.spawn.outside'));
       status.classList.toggle('is-bad', !ok);
     };
     upd();
     this._bind(upd);
-    const facing = selectControl({ value: s().facing, options: [{ value: 'down', label: 'Down (toward camera)' }, { value: 'up', label: 'Up' }, { value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }], onChange: (v) => st.setSpawn(s().x, s().z, v) });
+    const facing = selectControl({ value: s().facing, options: [{ value: 'down', label: tr('panels.spawn.facingDown') }, { value: 'up', label: tr('panels.spawn.facingUp') }, { value: 'left', label: tr('panels.spawn.facingLeft') }, { value: 'right', label: tr('panels.spawn.facingRight') }], onChange: (v) => st.setSpawn(s().x, s().z, v) });
     this._bind(() => facing.set(s().facing));
-    this.body.appendChild(this._section('Position', [
+    this.body.appendChild(this._section(tr('panels.spawn.position'), [
       this._pair(this._numberField('X', { get: () => s().x, set: setPos('x'), step: 0.5 }), this._numberField('Z', { get: () => s().z, set: setPos('z'), step: 0.5 })),
-      h('div', { class: 'le-field' }, h('label', { class: 'le-field-label' }, 'Facing'), h('div', { class: 'le-field-control' }, facing.el)),
+      h('div', { class: 'le-field' }, h('label', { class: 'le-field-label' }, tr('panels.spawn.facing')), h('div', { class: 'le-field-control' }, facing.el)),
       status,
     ]));
     this.body.appendChild(this._actions([
-      { label: 'Focus', icon: ICONS.focus, onClick: () => this.actions.focus(['spawn']) },
-      { label: 'Snap to tile centre', icon: ICONS.magnet, onClick: () => st.setSpawn(Math.floor(s().x) + 0.5, Math.floor(s().z) + 0.5) },
+      { label: tr('panels.inspector.focus'), icon: ICONS.focus, onClick: () => this.actions.focus(['spawn']) },
+      { label: tr('panels.spawn.snap'), icon: ICONS.magnet, onClick: () => st.setSpawn(Math.floor(s().x) + 0.5, Math.floor(s().z) + 0.5) },
     ]));
   }
 
@@ -587,21 +593,21 @@ export class Inspector {
     const valid = h('div', { class: 'le-status-line' });
     const upd = () => {
       const lv = L();
-      title.textContent = lv.name || 'Untitled';
-      sub.textContent = lv.subtitle || (lv.author ? `by ${lv.author}` : 'No subtitle');
+      title.textContent = lv.name || tr('common.untitled');
+      sub.textContent = lv.subtitle || (lv.author ? tr('panels.level.by', { author: lv.author }) : tr('panels.level.noSubtitle'));
       // a room (environment.interior): said under the name
-      if (isRoom(lv.environment)) sub.textContent += ' · a room';
+      if (isRoom(lv.environment)) sub.textContent += tr('panels.level.room');
       const s = levelStats(lv);
       const lights = countLights(lv);
       const npcs = s.counts.npc ?? 0;
       const tiles = lv.width * lv.depth;
       clear(stats).append(
-        stat('Size', `${lv.width} × ${lv.depth}`),
-        stat('Objects', String(s.objects)),
-        stat('Lights', lights > 12 ? `${lights} · 12 lit` : `${lights} / 12`, lights > 12 ? 'The game shares its 12 point lights among the lanterns, torches and campfires around the player (they crossfade as you walk).' : ''),
-        stat('Villagers', String(npcs)),
-        stat('Water', `${Math.round((s.water / tiles) * 100)}%`),
-        stat('Walkable', `${Math.round((s.walkable / tiles) * 100)}%`),
+        stat(tr('panels.level.size'), `${lv.width} × ${lv.depth}`),
+        stat(tr('panels.level.objects'), String(s.objects)),
+        stat(tr('panels.level.lights'), lights > 12 ? tr('panels.level.lightsLit', { n: lights }) : `${lights} / 12`, lights > 12 ? tr('panels.level.lightsTitle') : ''),
+        stat(tr('panels.level.villagers'), String(npcs)),
+        stat(tr('panels.level.water'), `${Math.round((s.water / tiles) * 100)}%`),
+        stat(tr('panels.level.walkable'), `${Math.round((s.walkable / tiles) * 100)}%`),
       );
       // combat levels (COMBAT.md §17): "Enemies n (groups g) · Waystones n · Chests n"
       const c = combatStats(lv);
@@ -609,15 +615,17 @@ export class Inspector {
       const shown = !!(c.groups || c.waystones || c.chests || on);
       combat.style.display = shown ? '' : 'none';
       if (shown) {
-        const mode = lv.environment?.combat === true ? 'on' : lv.environment?.combat === false ? 'off' : `auto (${on ? 'on' : 'off'})`;
+        const onOff = (v) => (v ? tr('panels.level.combatOn') : tr('panels.level.combatOff'));
+        const mode = lv.environment?.combat === true ? onOff(true) : lv.environment?.combat === false ? onOff(false) : tr('panels.level.combatAuto', { state: onOff(on) });
         const bad = (lv.environment?.combat === false && c.groups > 0) || (on && !c.waystones);
         clear(combat).append(icon(bad ? ICONS.warning : ICONS.info),
-          `Enemies ${c.enemies} (groups ${c.groups}) · Waystones ${c.waystones} · Chests ${c.chests}`);
-        combat.title = `Combat ${mode}${bad ? (on ? ' — no Waystone: a defeated player restarts at the player start' : ' — these enemies do not appear in the game') : ''} (Level settings › Environment).`;
+          tr('panels.level.combatLine', { enemies: c.enemies, groups: c.groups, waystones: c.waystones, chests: c.chests }));
+        const note = bad ? (on ? tr('panels.level.combatNoWaystone') : tr('panels.level.combatHidden')) : '';
+        combat.title = tr('panels.level.combatTitle', { mode, note });
         combat.classList.toggle('is-bad', bad);
       }
       const errors = validateLevel(lv).map(friendlyProblem);
-      clear(valid).append(icon(errors.length ? ICONS.warning : ICONS.check), errors.length ? errors.join(' ') : 'Ready to play-test');
+      clear(valid).append(icon(errors.length ? ICONS.warning : ICONS.check), errors.length ? errors.join(' ') : tr('panels.level.ready'));
       valid.classList.toggle('is-bad', errors.length > 0);
     };
     upd();
@@ -628,15 +636,15 @@ export class Inspector {
     let live = false;
     const tod = numberControl({
       value: env().timeOfDay, min: 0, max: 24, step: 0.25, suffix: 'h',
-      onChange: (v) => { if (v != null) st.setLevelProps({ environment: { timeOfDay: v } }, 'Time of day'); },
-      onInput: (v) => st.setLevelProps({ environment: { timeOfDay: v } }, 'Time of day'),
-      onBegin: () => { live = true; st.begin('Time of day'); },
+      onChange: (v) => { if (v != null) st.setLevelProps({ environment: { timeOfDay: v } }, tr('panels.level.undoTimeOfDay')); },
+      onInput: (v) => st.setLevelProps({ environment: { timeOfDay: v } }, tr('panels.level.undoTimeOfDay')),
+      onBegin: () => { live = true; st.begin(tr('panels.level.undoTimeOfDay')); },
       onEnd: () => { if (live) { live = false; st.commit(); } },
     });
-    const weather = selectControl({ value: env().weather, options: WEATHER, onChange: (v) => st.setLevelProps({ environment: { weather: v } }, 'Weather') });
+    const weather = selectControl({ value: env().weather, options: weatherOptions(), onChange: (v) => st.setLevelProps({ environment: { weather: v } }, tr('panels.level.weather')) });
     const wl = numberControl({
       value: L().waterLevel, min: -2, max: 10, step: 0.05, slider: false,
-      onChange: (v) => { if (v != null) st.setLevelProps({ waterLevel: v }, 'Water level'); },
+      onChange: (v) => { if (v != null) st.setLevelProps({ waterLevel: v }, tr('panels.level.undoWaterLevel')); },
     });
     this._bind(() => { tod.set(env().timeOfDay); weather.set(env().weather); wl.set(L().waterLevel); });
     // the 3D preview always shows the weather's light; the rain / snow, its haze and the snow
@@ -647,31 +655,31 @@ export class Inspector {
       // a room shows no weather (the game's LevelLook.shownWeather; the 3D preview follows it)
       if (isRoom(env())) {
         wHint.hidden = w !== 'rain' && w !== 'snow';
-        if (!wHint.hidden) clear(wHint).append(`This level is a room: the game shows no ${w} inside, and neither does the 3D view (Level settings › Environment › Interior).`);
+        if (!wHint.hidden) clear(wHint).append(w === 'rain' ? tr('panels.level.roomNoRain') : tr('panels.level.roomNoSnow'));
         return;
       }
       const on = (w === 'rain' || w === 'snow') && !st.view.atmosphere;
       wHint.hidden = !on;
       if (!on) return;
-      clear(wHint).append(`${w === 'rain' ? 'Rain and haze show' : 'Snowfall and snow cover show'} in the 3D view with particles on. `,
-        h('button', { class: 'le-link-btn', type: 'button', onClick: () => st.setView({ atmosphere: true }) }, 'Show it'));
+      clear(wHint).append(w === 'rain' ? tr('panels.level.rainHint') : tr('panels.level.snowHint'),
+        h('button', { class: 'le-link-btn', type: 'button', onClick: () => st.setView({ atmosphere: true }) }, tr('panels.level.showIt')));
     };
     updHint();
     this.bindings.push({ update: updHint, view: true });
-    const todHint = h('p', { class: 'le-hint' }, 'The 3D preview shows the start time while its sun slider is linked (3D view bar).');
-    this.body.appendChild(this._section('Environment', [
-      h('div', { class: 'le-field' }, h('label', { class: 'le-field-label' }, 'Start time'), h('div', { class: 'le-field-control' }, tod.el)),
+    const todHint = h('p', { class: 'le-hint' }, tr('panels.level.todHint'));
+    this.body.appendChild(this._section(tr('panels.level.environment'), [
+      h('div', { class: 'le-field' }, h('label', { class: 'le-field-label' }, tr('panels.level.startTime')), h('div', { class: 'le-field-control' }, tod.el)),
       todHint,
-      h('div', { class: 'le-field' }, h('label', { class: 'le-field-label' }, 'Weather'), h('div', { class: 'le-field-control' }, weather.el)),
+      h('div', { class: 'le-field' }, h('label', { class: 'le-field-label' }, tr('panels.level.weather')), h('div', { class: 'le-field-control' }, weather.el)),
       wHint,
-      h('div', { class: 'le-field', title: 'World height of the water surface (height level × 0.5)' }, h('label', { class: 'le-field-label' }, 'Water level (world units)'), h('div', { class: 'le-field-control' }, wl.el)),
+      h('div', { class: 'le-field', title: tr('panels.level.waterTitle') }, h('label', { class: 'le-field-label' }, tr('panels.level.waterLabel')), h('div', { class: 'le-field-control' }, wl.el)),
     ]));
     this.body.appendChild(this._actions([
-      { label: 'Level settings…', icon: ICONS.settings, onClick: () => this.actions.settings() },
-      { label: 'Resize…', icon: ICONS.resize, onClick: () => this.actions.resize() },
-      { label: 'Play-test', icon: ICONS.play, primary: true, title: 'F5', onClick: () => this.actions.playtest() },
+      { label: tr('panels.level.settings'), icon: ICONS.settings, onClick: () => this.actions.settings() },
+      { label: tr('panels.level.resize'), icon: ICONS.resize, onClick: () => this.actions.resize() },
+      { label: tr('panels.level.playtest'), icon: ICONS.play, primary: true, title: 'F5', onClick: () => this.actions.playtest() },
     ]));
-    this.body.appendChild(h('p', { class: 'le-hint le-pad' }, 'Select an object (V) or the player start to edit it here. Nothing is selected, so this shows the level.'));
+    this.body.appendChild(h('p', { class: 'le-hint le-pad' }, tr('panels.level.footer')));
   }
 }
 

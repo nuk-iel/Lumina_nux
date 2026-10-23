@@ -175,7 +175,7 @@ async function boot() {
     if (err instanceof SyntaxError) {
       shownWhy = t('game.error.json', { why });
       why = `the level is not valid JSON (${why})`;
-    } else if (!campaignName && !requested?.startsWith('local:') && /^Level ".*" not found( \(HTTP 404\))?$/.test(why)) {
+    } else if (!campaignName && !requested?.startsWith('local:') && err?.code === 'level.notFound' && (!err.status || err.status === 404)) {
       // a project level the server does not have (no HTTP status, or 404): name the file it looked for
       const file = `levels/${slugify(requested || DEFAULT_LEVEL)}.json`;
       why = `${file} does not exist`;

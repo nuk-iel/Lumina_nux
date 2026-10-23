@@ -12,6 +12,7 @@ import { PARTICLE_PRESETS } from '../../engine/fx/Particles.js';
 import * as GAME from '../../game/config.js';
 import { ENEMY_DEFS } from '../../game/combat/defs.js';
 import { enemyKind, enemyArena, enemyGate, bossArena, bossGate } from '../enemyGroups.js';
+import { tr } from '../i18n.js';
 import { COLORS, EMITTER_COLORS, fatSegments, fillMesh, pointsObject, boxEdges, disposeGeometry } from './Gizmos.js';
 import { rectFill, drapedRect, drapedCircle, drapedPath, pathToSegments } from './Drape.js';
 import { SpriteBatch } from './SpriteBatch.js';
@@ -32,6 +33,8 @@ const SPRITE_FILL = GAME.SPRITE_FILL ?? { day: 0.05, night: 0.03 };
 /** World direction of a level `facing`. */
 const FACING_VEC = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
 const CAT_COLORS = { fur: '#d8893c', fur2: '#a95a24', fur3: '#f3c27a' };
+/** Story event triggers with a short tag word ('tools.map.on.*', as on the 2D map). */
+const EVENT_ON_WORDS = new Set(['use', 'enter', 'leave', 'arrive', 'change', 'time', 'cleared']);
 /** Enemy group marker colours: home ring (elite groups: gold), boss arena, arena gate. */
 export const ENEMY_COLORS = Object.freeze({ ring: '#e0674f', elite: '#f2c14e', arena: '#ff8a5c', gate: '#ffd36b' });
 /** Directions an enemy may idle in (seeded per enemy; never its back to the camera). */
@@ -593,7 +596,7 @@ export class ActorPreview {
   _createRegion(o, sig) {
     const label = this.labels.create('region');
     label.id = o.id;
-    label.setText(o.name || 'Region', o.sub || '');
+    label.setText(o.name || tr('tools.map.region'), o.sub || '');
     const e = { id: o.id, type: 'region', obj: o, sig, sprites: [], over: [], label };
     this._place(e);
     return e;
@@ -627,8 +630,9 @@ export class ActorPreview {
     label.id = o.id;
     const on = typeof o.on === 'string' && o.on ? o.on : 'use';
     const prompt = typeof o.label === 'string' ? o.label.trim() : '';
-    const bg = /** @type {{ background?: unknown }} */ (o).background === true ? ' (background)' : '';
-    label.setText(`! ${on}${prompt ? ` · ${prompt}` : ''}${bg}`, typeof o.if === 'string' && o.if.trim() ? `if ${o.if.trim()}` : '');
+    const bg = /** @type {{ background?: unknown }} */ (o).background === true ? tr('tools.map.background') : '';
+    const word = EVENT_ON_WORDS.has(on) ? tr(`tools.map.on.${on}`) : on;
+    label.setText(`! ${word}${prompt ? ` · ${prompt}` : ''}${bg}`, typeof o.if === 'string' && o.if.trim() ? tr('tools.map.if', { cond: o.if.trim() }) : '');
     const e = { id: o.id, type: 'event', obj: o, sig, sprites: [], over: [], label };
     this._place(e);
     return e;

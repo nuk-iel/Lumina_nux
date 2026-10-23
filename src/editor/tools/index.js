@@ -21,7 +21,9 @@
  * @property {string} label               toolbar / menu name
  * @property {string} shortcut            single key shown in tooltips / menus
  * @property {string} icon                inline SVG string
- * @property {string} help                status-bar text
+ * @property {string} help                status-bar text ("name — tip")
+ * @property {string} [tip]               what the tool does (the help without its name: toolbar
+ *                                        tooltip; `help` when absent)
  * @property {ToolCursor} cursor          default cursor (cursorFor may refine it)
  * @property {(state: EditorState) => void} [activate]
  *   the tool became active (also the second half of a reset)

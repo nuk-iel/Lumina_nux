@@ -8,6 +8,7 @@ import { ICONS } from '../icons.js';
 import { getTool } from '../tools/index.js';
 import { getTile, getHeightLevel, levelToWorld } from '../../engine/level/LevelFormat.js';
 import { tileLabel, tileColor } from '../tools/common.js';
+import { tr, trn } from '../i18n.js';
 
 export class StatusBar {
   constructor(host, state) {
@@ -16,9 +17,9 @@ export class StatusBar {
     this.msgIcon = h('span', { class: 'le-status-msg-icon' });
     this.msg = h('div', { class: 'le-status-msg' });
     this.right = h('div', { class: 'le-status-right' });
-    this.zoom = h('span', { class: 'le-status-zoom', title: '2D map zoom (100% = 16 px per tile)' });
+    this.zoom = h('span', { class: 'le-status-zoom', title: tr('panels.status.zoomTitle') });
     this.counts = h('span');
-    this.story = h('span', { class: 'le-status-story', hidden: true, title: 'View › Story preview…: objects whose story conditions do not hold are hidden' }, 'Story preview: on');
+    this.story = h('span', { class: 'le-status-story', hidden: true, title: tr('panels.status.storyTitle') }, tr('panels.status.storyOn'));
     this.storySep = h('span', { class: 'le-status-sep', hidden: true });
     this.right.append(this.counts, this.storySep, this.story, h('span', { class: 'le-status-sep' }), this.zoom);
     this.el = h('footer', { class: 'le-statusbar' }, this.pos, h('div', { class: 'le-status-center' }, this.msgIcon, this.msg), this.right);
@@ -41,16 +42,16 @@ export class StatusBar {
     const hv = this.state.hover;
     const L = this.state.level;
     clear(this.pos);
-    if (!hv) { this.pos.appendChild(h('span', { class: 'le-dim' }, 'Move the pointer over the map')); return; }
+    if (!hv) { this.pos.appendChild(h('span', { class: 'le-dim' }, tr('panels.status.hover'))); return; }
     const ch = getTile(L, hv.i, hv.j);
     const lvl = getHeightLevel(L, hv.i, hv.j);
     this.pos.append(...[
-      h('span', { class: 'le-status-coord', title: 'Tile (column, row)' }, `${hv.i}, ${hv.j}`),
+      h('span', { class: 'le-status-coord', title: tr('panels.status.tileTitle') }, `${hv.i}, ${hv.j}`),
       ch != null
         ? h('span', { class: 'le-status-tile' }, h('span', { class: 'le-status-dot', style: { background: tileColor(ch, L.legend[ch]) } }), tileLabel(L, ch))
-        : h('span', { class: 'le-dim' }, 'outside the map'),
-      lvl != null ? h('span', { title: 'Height level (world y)' }, `Lv ${lvl}`, h('span', { class: 'le-dim' }, ` · y ${levelToWorld(lvl).toFixed(1)}`)) : null,
-      h('span', { class: 'le-dim', title: 'World position' }, `x ${hv.x.toFixed(2)}  z ${hv.z.toFixed(2)}`),
+        : h('span', { class: 'le-dim' }, tr('panels.status.outside')),
+      lvl != null ? h('span', { title: tr('panels.status.heightTitle') }, `Lv ${lvl}`, h('span', { class: 'le-dim' }, ` · y ${levelToWorld(lvl).toFixed(1)}`)) : null,
+      h('span', { class: 'le-dim', title: tr('panels.status.worldTitle') }, `x ${hv.x.toFixed(2)}  z ${hv.z.toFixed(2)}`),
     ].filter(Boolean)); // (Element.append would print a null as "null")
   }
 
@@ -101,7 +102,7 @@ export class StatusBar {
   updateCounts() {
     const L = this.state.level;
     const sel = this.state.selection.length;
-    this.counts.textContent = `${L.objects.length} object${L.objects.length === 1 ? '' : 's'}${sel ? ` · ${sel} selected` : ''} · ${L.width} × ${L.depth}`;
+    this.counts.textContent = `${trn('panels.status.objects', L.objects.length)}${sel ? tr('panels.status.selected', { n: sel }) : ''} · ${L.width} × ${L.depth}`;
   }
 
   /** "Story preview: on" while the story preview hides objects by their story conditions. */

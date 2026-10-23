@@ -35,6 +35,7 @@ import { isOwnKey, toText } from '../utils/own.js';
 import { isStoryName, parseCondition, parseRef, plainNumber, isTextRef, scriptLines, conditionRefs, RESERVED_WORDS } from './StoryCondition.js';
 import { PRESET_NAMES, CLASS_NAMES, RULE_KEYS, RULE_FIELDS, isPreset, isClass, isRuleField, isRuleValue } from './PartyRules.js';
 import { splitLineTag, subtitleKey, LINE_TAG } from '../i18n/ContentKeys.js';
+import { sm } from './storyMessages.js';
 
 export {
   REF_KINDS, GAME_REFS, RESERVED_WORDS, QUEST_STATES, isTextRef, plainNumber, isStoryName, isFlagName, parseRef, parseCondition,
@@ -246,6 +247,9 @@ function lineText(s) {
   });
 }
 
+/** A command's usage as an error (`wait <seconds> | <who>`). @param {string} usage */
+const usageError = (usage) => new Error(sm('cmd.usage', { usage }));
+
 /**
  * Read one command's arguments.
  * @param {string} op
@@ -255,9 +259,10 @@ function lineText(s) {
 function commandArgs(op, rest) {
   const W = splitWords(rest);
   const w = W.map((x) => x.text);
+  // (`what`: what the argument is, a storyStrings.js `noun.*` key)
   const name = (v, what) => {
-    if (v === undefined || v === '') throw new Error(`${what} is missing`);
-    if (!isStoryName(v)) throw new Error(`"${v}" is not a ${what} (letters, digits, _ . -)`);
+    if (v === undefined || v === '') throw new Error(sm('cmd.missing', { what: sm(`noun.${what}`) }));
+    if (!isStoryName(v)) throw new Error(sm('cmd.notName', { v, what: sm(`noun.${what}`) }));
     return v;
   };
   /** An actor or a place: a name, or a "quoted" display name (`walk "Elder Wren" well`). */
@@ -265,7 +270,7 @@ function commandArgs(op, rest) {
     const x = W[k];
     if (x?.quoted) {
       const t = x.text.trim();
-      if (!t || t.length > MAX_QUOTED_NAME) throw new Error(`"${x.text}" is not a ${what} (a quoted name has 1–${MAX_QUOTED_NAME} characters)`);
+      if (!t || t.length > MAX_QUOTED_NAME) throw new Error(sm('cmd.quotedLength', { v: x.text, what: sm(`noun.${what}`), max: MAX_QUOTED_NAME }));
       return t;
     }
     return name(x?.text, what);
@@ -276,87 +281,87 @@ function commandArgs(op, rest) {
   const isWord = (k, ...words) => !!W[k] && !W[k].quoted && words.includes(W[k].text);
   const flag = (v, what) => {
     name(v, what);
-    if (RESERVED_WORDS.has(v.toLowerCase())) throw new Error(`"${v}" is a reserved word, not a ${what}`);
+    if (RESERVED_WORDS.has(v.toLowerCase())) throw new Error(sm('cmd.reserved', { v, what: sm(`noun.${what}`) }));
     return v;
   };
   const count = (v, what) => {
     if (v === undefined) return 1;
     const n = num(v);
-    if (!Number.isInteger(n) || n < 1 || n > 1e6) throw new Error(`${what} must be a whole number from 1`);
+    if (!Number.isInteger(n) || n < 1 || n > 1e6) throw new Error(sm('cmd.count', { what: sm(`noun.${what}`) }));
     return n;
   };
   const seconds = (v, def) => {
     if (v === undefined) return def;
     const n = num(v);
-    if (!(n >= 0 && n <= 600)) throw new Error(`"${v}" is not a time in seconds`);
+    if (!(n >= 0 && n <= 600)) throw new Error(sm('cmd.seconds', { v }));
     return n;
   };
   const none = () => {
-    if (w.length) throw new Error(`"${op}" takes nothing after it`);
+    if (w.length) throw new Error(sm('cmd.nothingAfter', { op }));
     return {};
   };
   switch (op) {
     case 'break': case 'stop': case 'rest': case 'heal': case 'shop': case 'cutscene': case 'else': case 'loop':
       return none();
     case 'once': case 'cycle': case 'seq': case 'pick':
-      if (w.length !== 1) throw new Error(`${op} <key> (a name the save remembers it by)`);
+      if (w.length !== 1) throw new Error(sm('cmd.keyUsage', { op }));
       return { key: name(w[0], 'key') };
     case 'call': case 'builtin': {
-      const what = op === 'call' ? 'script name' : 'conversation name';
-      if (w.length > 1) throw new Error(`${op} takes one ${what} — nothing after it`);
+      const what = op === 'call' ? 'scriptName' : 'conversationName';
+      if (w.length > 1) throw new Error(sm('cmd.oneName', { op, what: sm(`noun.${what}`) }));
       return { script: name(w[0], what) };
     }
     case 'wait': {
-      if (w.length !== 1) throw new Error('wait <seconds> | <who>');
+      if (w.length !== 1) throw usageError('wait <seconds> | <who>');
       if (isNum(0)) return { seconds: seconds(w[0], 1) };
       return { who: who(0, 'actor') };
     }
     case 'set': case 'clear':
-      if (w.length !== 1) throw new Error(`${op} <flag>`);
-      return { name: flag(w[0], 'flag name') };
+      if (w.length !== 1) throw usageError(`${op} <flag>`);
+      return { name: flag(w[0], 'flagName') };
     case 'var': {
-      if (w.length !== 3) throw new Error('var <name> = | + | - <number>');
+      if (w.length !== 3) throw usageError('var <name> = | + | - <number>');
       const by = ownOp(w[1]);
-      if (!by) throw new Error(`"${w[1]}" is not = + or -`);
+      if (!by) throw new Error(sm('cmd.notOp', { v: w[1] }));
       const n = num(w[2]);
-      if (!Number.isFinite(n) || Math.abs(n) > 1e9) throw new Error(`"${w[2]}" is not a number`);
-      return { name: flag(w[0], 'variable name'), by, value: n };
+      if (!Number.isFinite(n) || Math.abs(n) > 1e9) throw new Error(sm('cmd.notNumber', { v: w[2] }));
+      return { name: flag(w[0], 'variableName'), by, value: n };
     }
     case 'give': case 'take':
-      if (w.length < 1 || w.length > 2) throw new Error(`${op} <item> [count]`);
-      return { item: name(w[0], 'item id'), count: count(w[1], 'the count') };
+      if (w.length < 1 || w.length > 2) throw usageError(`${op} <item> [count]`);
+      return { item: name(w[0], 'itemId'), count: count(w[1], 'count') };
     case 'quest': {
-      const id = name(w[0], 'quest id');
+      const id = name(w[0], 'questId');
       const verb = w[1];
       if (verb === 'start') return { id, verb, text: lineText(textAfter(rest, 2)) };
-      if (verb === 'stage') return { id, verb, stage: name(w[2], 'stage name'), text: lineText(textAfter(rest, 3)) };
+      if (verb === 'stage') return { id, verb, stage: name(w[2], 'stageName'), text: lineText(textAfter(rest, 3)) };
       if (verb === 'done' || verb === 'fail') {
-        if (w.length > 2) throw new Error(`quest <id> ${verb} takes nothing after it`);
+        if (w.length > 2) throw new Error(sm('cmd.questNothing', { verb }));
         return { id, verb };
       }
-      throw new Error('quest <id> start [title] | stage <stage> [text] | done | fail');
+      throw usageError('quest <id> start [title] | stage <stage> [text] | done | fail');
     }
     case 'home': {
       const actor = who(0, 'actor');
       if (w.length === 1) return { who: actor };
-      if (w.length !== 3 || !isNum(1) || !isNum(2)) throw new Error('home <who> [x z]');
+      if (w.length !== 3 || !isNum(1) || !isNum(2)) throw usageError('home <who> [x z]');
       return { who: actor, x: num(w[1]), z: num(w[2]) };
     }
     case 'time': {
       // hh:mm — minutes 00–59 (`12:75` is no time)
       const hm = /^(\d{1,2}):([0-5]\d)$/.exec(w[0] ?? '');
       const h = hm ? Number(hm[1]) + Number(hm[2]) / 60 : num(w[0]);
-      if (w.length !== 1 || !(h >= 0 && h <= 24)) throw new Error('time <hour 0–24> | <hh:mm> (minutes 00–59)');
+      if (w.length !== 1 || !(h >= 0 && h <= 24)) throw new Error(sm('cmd.time'));
       return { hour: h };
     }
     case 'weather':
-      if (w.length !== 1 || !SCRIPT_WEATHERS.includes(/** @type {any} */ (w[0]))) throw new Error(`weather ${SCRIPT_WEATHERS.join(' | ')}`);
+      if (w.length !== 1 || !SCRIPT_WEATHERS.includes(/** @type {any} */ (w[0]))) throw usageError(`weather ${SCRIPT_WEATHERS.join(' | ')}`);
       return { weather: w[0] };
     case 'travel':
-      if (w.length < 1 || w.length > 2) throw new Error('travel <level> [entrance]');
-      return { level: name(w[0], 'level id'), entrance: w[1] === undefined ? '' : name(w[1], 'entrance name') };
+      if (w.length < 1 || w.length > 2) throw usageError('travel <level> [entrance]');
+      return { level: name(w[0], 'levelId'), entrance: w[1] === undefined ? '' : name(w[1], 'entranceName') };
     case 'ending':
-      return { id: name(w[0], 'ending id'), title: lineText(textAfter(rest, 1)) };
+      return { id: name(w[0], 'endingId'), title: lineText(textAfter(rest, 1)) };
     case 'walk': case 'teleport': {
       const actor = who(0, 'actor');
       const flags = new Set();
@@ -370,48 +375,48 @@ function commandArgs(op, rest) {
         : { who: actor, facing: SCRIPT_FACINGS.find((f) => flags.has(f)) ?? '' };
       if (pos.length === 2 && isNum(pos[0]) && isNum(pos[1])) return { ...base, x: num(w[pos[0]]), z: num(w[pos[1]]) };
       if (pos.length === 1) return { ...base, to: who(pos[0], 'place') };
-      throw new Error(op === 'walk' ? 'walk <who> <x> <z> | <who> <place> [run] [nowait]' : 'teleport <who> <x> <z> | <who> <place> [facing]');
+      throw usageError(op === 'walk' ? 'walk <who> <x> <z> | <who> <place> [run] [nowait]' : 'teleport <who> <x> <z> | <who> <place> [facing]');
     }
     case 'face': {
-      if (w.length !== 2) throw new Error('face <who> up | down | left | right | <who> <place>');
+      if (w.length !== 2) throw usageError('face <who> up | down | left | right | <who> <place>');
       const actor = who(0, 'actor');
       return isWord(1, ...SCRIPT_FACINGS) ? { who: actor, dir: w[1] } : { who: actor, to: who(1, 'place') };
     }
     case 'emote': {
-      if (w.length < 2 || w.length > 3) throw new Error('emote <who> <icon> [seconds]');
-      if (!isOwnKey(EMOTES, w[1])) throw new Error(`"${w[1]}" is not an emote (${Object.keys(EMOTES).join(' ')})`);
+      if (w.length < 2 || w.length > 3) throw usageError('emote <who> <icon> [seconds]');
+      if (!isOwnKey(EMOTES, w[1])) throw new Error(sm('cmd.notEmote', { v: w[1], list: Object.keys(EMOTES).join(' ') }));
       return { who: who(0, 'actor'), icon: EMOTES[w[1]], seconds: seconds(w[2], 1.6) };
     }
     case 'bark': {
       // the text is the rest of the line after <who> (a "quoted" name too), as written
-      if (w.length < 2) throw new Error('bark <who> <text>');
+      if (w.length < 2) throw usageError('bark <who> <text>');
       const actor = who(0, 'actor');
       return { who: actor, text: lineText(rest.slice(W[0].end).trim()) };
     }
     case 'camera': {
       if (isWord(0, 'reset')) {
-        if (w.length > 2) throw new Error('camera reset [seconds]');
+        if (w.length > 2) throw usageError('camera reset [seconds]');
         return { reset: true, seconds: seconds(w[1], 0.8) };
       }
       if (w.length >= 2 && isNum(0) && isNum(1)) {
-        if (w.length > 3) throw new Error('camera <x> <z> [seconds]');
+        if (w.length > 3) throw usageError('camera <x> <z> [seconds]');
         return { x: num(w[0]), z: num(w[1]), seconds: seconds(w[2], 1) };
       }
-      if (w.length < 1 || w.length > 2) throw new Error('camera <who> [seconds] | <x> <z> [seconds] | reset [seconds]');
-      return { who: who(0, 'actor or place'), seconds: seconds(w[1], 1) };
+      if (w.length < 1 || w.length > 2) throw usageError('camera <who> [seconds] | <x> <z> [seconds] | reset [seconds]');
+      return { who: who(0, 'actorOrPlace'), seconds: seconds(w[1], 1) };
     }
     case 'shake': {
       const a = w[0] === undefined ? 0.3 : num(w[0]);
-      if (w.length > 1 || !(a >= 0 && a <= 2)) throw new Error('shake [amount 0–2]');
+      if (w.length > 1 || !(a >= 0 && a <= 2)) throw usageError('shake [amount 0–2]');
       return { amount: a };
     }
     case 'fade': {
-      if ((w[0] !== 'out' && w[0] !== 'in') || w.length > 2) throw new Error('fade out | in [seconds]');
+      if ((w[0] !== 'out' && w[0] !== 'in') || w.length > 2) throw usageError('fade out | in [seconds]');
       return { dir: w[0], seconds: seconds(w[1], w[0] === 'out' ? 0.5 : 0.6) };
     }
     case 'banner': {
       const t = rest.trim();
-      if (!t) throw new Error('banner <title> [| subtitle]');
+      if (!t) throw usageError('banner <title> [| subtitle]');
       // `\|` is a bar inside the title
       const parts = t.split(/(?<!\\)\|/);
       const clean = (s) => lineText(s.replace(/\\\|/g, '|').trim());
@@ -419,19 +424,19 @@ function commandArgs(op, rest) {
     }
     case 'toast': {
       const t = rest.trim();
-      if (!t) throw new Error('toast <text>');
+      if (!t) throw usageError('toast <text>');
       return { text: lineText(t) };
     }
     case 'sfx':
-      if (w.length !== 1) throw new Error('sfx <sound>');
-      return { name: name(w[0], 'sound name') };
+      if (w.length !== 1) throw usageError('sfx <sound>');
+      return { name: name(w[0], 'soundName') };
     case 'music':
-      if (w.length !== 1) throw new Error('music <track> | on | off');
+      if (w.length !== 1) throw usageError('music <track> | on | off');
       return { track: name(w[0], 'track') };
     case 'party':
       return partyArgs(W, who, isWord);
     default:
-      throw new Error(`"${op}" is not a command`);
+      throw new Error(sm('cmd.notCommand', { op }));
   }
 }
 
@@ -500,15 +505,15 @@ const RULE_SYNONYMS = Object.freeze({
  * `"x" is not <what> (a, b, c) — did you mean "y"?` A quoted name of the list says to write it
  * without quotes; the synonyms of `field`'s values (`RULE_SYNONYMS`) come before the closest
  * spelling.
- * @param {string} word @param {string} what @param {readonly string[]} names
+ * @param {string} word @param {string} what (worded: `sm('noun.class')`) @param {readonly string[]} names
  * @param {{ quoted?: boolean, usage?: string, field?: string }} [opts]
  */
 function notOneOf(word, what, names, { quoted = false, usage = '', field = '' } = {}) {
   const low = String(word).toLowerCase();
-  if (quoted && names.includes(low)) return new Error(`"${word}" is quoted — ${what} is written without quotes: ${low}${usage ? ` (${usage})` : ''}`);
+  if (quoted && names.includes(low)) return new Error(sm('oneOf.quoted', { word, what, low, usage }));
   const syn = field && isOwnKey(RULE_SYNONYMS, field) && isOwnKey(RULE_SYNONYMS[field], low) ? RULE_SYNONYMS[field][low] : '';
   const hint = syn || closestName(word, names);
-  return new Error(`"${word}" is not ${what} (${names.join(', ')})${hint ? ` — did you mean "${hint}"?` : ''}`);
+  return new Error(sm('oneOf.not', { word, what, names: names.join(', '), hint }));
 }
 
 /** `<who>` as a command writes it again (quoted when it has spaces). @param {string} v */
@@ -525,14 +530,14 @@ const asWritten = (v) => (/\s/.test(v) ? `"${v}"` : v);
  */
 function partyArgs(W, who, isWord) {
   const verb = W[0] && !W[0].quoted ? W[0].text : '';
-  if (!verb) throw new Error(`party ${PARTY_VERBS.join(' | ')} — ${Object.values(PARTY_USAGE).join(' · ')}`);
-  if (!isOwnKey(PARTY_USAGE, verb)) throw notOneOf(verb, 'a party command', PARTY_VERBS);
+  if (!verb) throw usageError(`party ${PARTY_VERBS.join(' | ')} — ${Object.values(PARTY_USAGE).join(' · ')}`);
+  if (!isOwnKey(PARTY_USAGE, verb)) throw notOneOf(verb, sm('noun.partyCommand'), PARTY_VERBS);
   const usage = PARTY_USAGE[verb];
   /** The member or villager (word 1): never the player, who leads the party. */
   const villager = () => {
-    if (!W[1]) throw new Error(`${usage}: the villager is missing`);
+    if (!W[1]) throw new Error(sm('party.villagerMissing', { usage }));
     const v = who(1, 'villager');
-    if (v.toLowerCase() === 'player') throw new Error(`${usage}: the player leads the party — <who> is a villager`);
+    if (v.toLowerCase() === 'player') throw new Error(sm('party.playerLeads', { usage }));
     return v;
   };
   switch (verb) {
@@ -543,53 +548,53 @@ function partyArgs(W, who, isWord) {
       for (let k = 2; k < W.length; k++) {
         const x = W[k];
         if (isWord(k, 'as')) {
-          if (cls) throw new Error(`${usage}: the class is given twice`);
+          if (cls) throw new Error(sm('party.classTwice', { usage }));
           const c = W[k + 1];
-          if (!c) throw new Error(`${usage}: the class is missing after "as" (${CLASS_NAMES.join(', ')})`);
-          if (!c.quoted && isPreset(c.text.toLowerCase())) throw new Error(`"${c.text}" is a preset, not a class (${CLASS_NAMES.join(', ')}) — a preset is written without "as": party join ${asWritten(v)} ${c.text.toLowerCase()}`);
-          if (c.quoted || !isClass(c.text)) throw notOneOf(c.text, 'a class', CLASS_NAMES, { quoted: c.quoted, usage });
+          if (!c) throw new Error(sm('party.classMissing', { usage, classes: CLASS_NAMES.join(', ') }));
+          if (!c.quoted && isPreset(c.text.toLowerCase())) throw new Error(sm('party.presetNotClass', { v: c.text, classes: CLASS_NAMES.join(', '), who: asWritten(v), preset: c.text.toLowerCase() }));
+          if (c.quoted || !isClass(c.text)) throw notOneOf(c.text, sm('noun.class'), CLASS_NAMES, { quoted: c.quoted, usage });
           cls = c.text;
           k++;
           continue;
         }
-        if (!x.quoted && isClass(x.text)) throw new Error(`"${x.text}" is a class — write "as ${x.text}" (${usage})`);
-        if (x.quoted || !isPreset(x.text)) throw notOneOf(x.text, 'a preset', PRESET_NAMES, { quoted: x.quoted, usage });
-        if (preset) throw new Error(`${usage}: the preset is given twice`);
+        if (!x.quoted && isClass(x.text)) throw new Error(sm('party.writeAs', { v: x.text, usage }));
+        if (x.quoted || !isPreset(x.text)) throw notOneOf(x.text, sm('noun.preset'), PRESET_NAMES, { quoted: x.quoted, usage });
+        if (preset) throw new Error(sm('party.presetTwice', { usage }));
         preset = x.text;
       }
       return { verb, who: v, cls, preset };
     }
     case 'leave': {
       const v = villager();
-      if (W.length > 2) throw new Error(`${usage} — nothing after the villager`);
+      if (W.length > 2) throw new Error(sm('party.leaveExtra', { usage }));
       return { verb, who: v };
     }
     case 'rule': {
       const v = villager();
       const x = W[2];
-      if (!x) throw new Error(`${usage}: the preset is missing (${PRESET_NAMES.join(', ')})`);
-      if (!x.quoted && isRuleField(x.text)) throw new Error(`"${x.text}" is a field of the rule — write "party set ${asWritten(v)} ${x.text} <value>" (${usage})`);
-      if (!x.quoted && isClass(x.text.toLowerCase())) throw new Error(`"${x.text}" is a class, not a preset (${PRESET_NAMES.join(', ')}) — a member's class is chosen when it joins: party join ${asWritten(v)} as ${x.text.toLowerCase()}`);
-      if (x.quoted || !isPreset(x.text)) throw notOneOf(x.text, 'a preset', PRESET_NAMES, { quoted: x.quoted, usage });
-      if (W.length > 3) throw new Error(`${usage} — one preset, nothing after it`);
+      if (!x) throw new Error(sm('party.presetMissing', { usage, presets: PRESET_NAMES.join(', ') }));
+      if (!x.quoted && isRuleField(x.text)) throw new Error(sm('party.fieldNotPreset', { v: x.text, who: asWritten(v), usage }));
+      if (!x.quoted && isClass(x.text.toLowerCase())) throw new Error(sm('party.classNotPreset', { v: x.text, presets: PRESET_NAMES.join(', '), who: asWritten(v), cls: x.text.toLowerCase() }));
+      if (x.quoted || !isPreset(x.text)) throw notOneOf(x.text, sm('noun.preset'), PRESET_NAMES, { quoted: x.quoted, usage });
+      if (W.length > 3) throw new Error(sm('party.presetExtra', { usage }));
       return { verb, who: v, preset: x.text };
     }
     case 'set': {
       const v = villager();
       const f = W[2];
-      if (!f) throw new Error(`${usage}: the field is missing (${RULE_KEYS.join(', ')})`);
-      if (!f.quoted && isPreset(f.text)) throw new Error(`"${f.text}" is a preset — write "party rule ${asWritten(v)} ${f.text}" (${usage})`);
-      if (f.quoted || !isRuleField(f.text)) throw notOneOf(f.text, 'a field of the rule', RULE_KEYS, { quoted: f.quoted, usage });
+      if (!f) throw new Error(sm('party.fieldMissing', { usage, fields: RULE_KEYS.join(', ') }));
+      if (!f.quoted && isPreset(f.text)) throw new Error(sm('party.presetNotField', { v: f.text, who: asWritten(v), usage }));
+      if (f.quoted || !isRuleField(f.text)) throw notOneOf(f.text, sm('noun.ruleField'), RULE_KEYS, { quoted: f.quoted, usage });
       const values = RULE_FIELDS[f.text].values;
       const x = W[3];
-      if (!x) throw new Error(`${usage}: the value is missing (${f.text}: ${values.join(', ')})`);
-      if (x.quoted || !isRuleValue(f.text, x.text)) throw notOneOf(x.text, `a value of ${f.text}`, values, { quoted: x.quoted, usage, field: f.text });
-      if (W.length > 4) throw new Error(`${usage} — one value, nothing after it`);
+      if (!x) throw new Error(sm('party.valueMissing', { usage, field: f.text, values: values.join(', ') }));
+      if (x.quoted || !isRuleValue(f.text, x.text)) throw notOneOf(x.text, sm('noun.ruleValue', { field: f.text }), values, { quoted: x.quoted, usage, field: f.text });
+      if (W.length > 4) throw new Error(sm('party.valueExtra', { usage }));
       return { verb, who: v, field: f.text, value: x.text };
     }
     default: {
       // menu
-      if (W.length > 2) throw new Error(`${usage} — at most one member, nothing after it`);
+      if (W.length > 2) throw new Error(sm('party.menuExtra', { usage }));
       return { verb, who: W[1] ? villager() : '' };
     }
   }
@@ -681,7 +686,7 @@ export function parseScript(source) {
   /** the lines read as no statement that may read again (`ParsedScript.parked`) */
   const parked = new Set();
   if (raw.length > SCRIPT_LIMITS.lines) {
-    errors.push({ line: SCRIPT_LIMITS.lines + 1, msg: `a script may have at most ${SCRIPT_LIMITS.lines} lines — the rest is ignored` });
+    errors.push({ line: SCRIPT_LIMITS.lines + 1, msg: sm('script.tooManyLines', { max: SCRIPT_LIMITS.lines }) });
     for (let k = SCRIPT_LIMITS.lines; k < raw.length; k++) parked.add(k + 1);
     raw.length = SCRIPT_LIMITS.lines;
   }
@@ -697,7 +702,7 @@ export function parseScript(source) {
     const { indent, text: full, tab, space } = splitIndent(s);
     const { text, tag } = splitLineTag(full);
     if (text.length > SCRIPT_LIMITS.lineLength) {
-      errors.push({ line: k + 1, msg: `line longer than ${SCRIPT_LIMITS.lineLength} characters` });
+      errors.push({ line: k + 1, msg: sm('script.lineTooLong', { max: SCRIPT_LIMITS.lineLength }) });
       parked.add(k + 1);
       return;
     }
@@ -705,7 +710,7 @@ export function parseScript(source) {
     if (text.startsWith('#')) { parked.add(k + 1); return; }
     if (!text) return;
     if (tagLeft(text) >= 0) {
-      errors.push({ line: k + 1, msg: `"${LINE_TAG}" in the line: a key tag is "${LINE_TAG}" and 32 hex digits at the end of the line, after a space — one per line` });
+      errors.push({ line: k + 1, msg: sm('script.tagInLine', { tag: LINE_TAG }) });
       parked.add(k + 1);
       return;
     }
@@ -714,7 +719,7 @@ export function parseScript(source) {
     lines.push({ line: k + 1, indent, text });
   });
   /** Said after an indentation error when the script indents with tabs and with spaces. */
-  const indentHint = tabs && spaces ? ' (this script indents with tabs and with spaces: a tab counts as 2 spaces)' : '';
+  const indentHint = tabs && spaces ? sm('script.indentHint') : '';
   let k = 0;
   /** The speaker of the nearest line of dialogue above (in the text): what `- text` repeats. */
   let lastSpeaker = /** @type {string|null} */ (null);
@@ -732,7 +737,7 @@ export function parseScript(source) {
       const L = lines[k];
       if (L.indent < indent) break;
       if (L.indent > indent) {
-        errors.push({ line: L.line, msg: `unexpected indentation${indentHint}` });
+        errors.push({ line: L.line, msg: sm('script.unexpectedIndent', { hint: indentHint }) });
         parked.add(L.line);
         k++;
         continue;
@@ -761,13 +766,13 @@ export function parseScript(source) {
    * A line that takes no block has lines indented under it: they are reported (one error, at the
    * first) and left out; the line itself stays.
    * @param {{ line: number, indent: number }} L
-   * @param {string} what
+   * @param {string} what (worded)
    */
   const rejectChildren = (L, what) => {
     const first = lines[k].line;
     let n = 0;
     while (k < lines.length && lines[k].indent > L.indent) { parked.add(lines[k].line); k++; n++; }
-    errors.push({ line: first, msg: `unexpected indentation: ${what} takes no indented block — ${n === 1 ? 'this line is' : `these ${n} lines are`} left out${indentHint}` });
+    errors.push({ line: first, msg: sm('script.rejectChildren', { what, n, hint: indentHint }) });
   };
 
   /**
@@ -775,8 +780,8 @@ export function parseScript(source) {
    * @returns {any[]}
    */
   const childBlock = (L, depth, kind = /** @type {'script'|'choice'|'vary'} */ ('script')) => {
-    if (depth >= SCRIPT_LIMITS.depth) throw new Error(`blocks nested deeper than ${SCRIPT_LIMITS.depth}`);
-    if (!hasChildren(L)) throw new Error(`an indented block must follow${indentHint}`);
+    if (depth >= SCRIPT_LIMITS.depth) throw new Error(sm('script.tooDeep', { max: SCRIPT_LIMITS.depth }));
+    if (!hasChildren(L)) throw new Error(sm('script.needBlock', { hint: indentHint }));
     return block(lines[k].indent, depth + 1, kind);
   };
 
@@ -788,13 +793,13 @@ export function parseScript(source) {
   const dialogue = (L, text) => {
     if (text.startsWith(':') && (text.length === 1 || /\s/.test(text[1]))) {
       const said = text.slice(1).trim();
-      if (!said) throw new Error('the line says nothing');
+      if (!said) throw new Error(sm('script.saysNothing'));
       lastSpeaker = '';
       return { t: 'say', line: L.line, speaker: '', text: lineText(said) };
     }
     if (text === '-' || text.startsWith('- ')) {
       const said = text.slice(1).trim();
-      if (!said) throw new Error('the line says nothing');
+      if (!said) throw new Error(sm('script.saysNothing'));
       return { t: 'say', line: L.line, speaker: lastSpeaker, text: lineText(said) };
     }
     // a command word goes first: `toast Obtained: an apple` is a command
@@ -806,7 +811,7 @@ export function parseScript(source) {
     if (q || (colon > 0 && colon <= 60 && (colon === text.length - 1 || /\s/.test(text[colon + 1])))) {
       const speaker = q ? q[1].trim() : text.slice(0, colon).trim();
       const said = (q ? q[3] ?? '' : text.slice(colon + 1)).trim();
-      if (!said) throw new Error('the line says nothing');
+      if (!said) throw new Error(sm('script.saysNothing'));
       lastSpeaker = speaker;
       return { t: 'say', line: L.line, speaker, text: lineText(said) };
     }
@@ -817,8 +822,8 @@ export function parseScript(source) {
   const notACommand = (text, dialogueHint) => {
     const first = /^\S+/.exec(text)?.[0] ?? text;
     const hint = suggest(first);
-    const colon = first.includes(':') ? ' — a speaker\'s colon needs a space after it ("Name: text")' : dialogueHint ? ' — dialogue is written "Name: text"' : '';
-    return new Error(`"${first}" is not a command${hint ? ` (did you mean "${hint}"?)` : ''}${colon}`);
+    const why = first.includes(':') ? 'colon' : dialogueHint ? 'dialogue' : '';
+    return new Error(sm('script.notCommand', { first, hint, why }));
   };
 
   /**
@@ -831,10 +836,10 @@ export function parseScript(source) {
    */
   const statement = (L, depth, kind, siblings) => {
     const text = L.text;
-    if (kind === 'choice' && !text.startsWith('>')) throw new Error('a choice holds only options ("> label")');
-    if (kind === 'vary' && !text.startsWith('*')) throw new Error('a cycle / seq / pick holds only "*" alternatives');
+    if (kind === 'choice' && !text.startsWith('>')) throw new Error(sm('script.choiceOnly'));
+    if (kind === 'vary' && !text.startsWith('*')) throw new Error(sm('script.varyOnly'));
     if (text.startsWith('>')) {
-      if (kind !== 'choice') throw new Error('an option ("> label") must be inside a choice');
+      if (kind !== 'choice') throw new Error(sm('script.optionOutside'));
       let rest = text.slice(1).trim();
       let cond = null;
       let src = '';
@@ -845,20 +850,20 @@ export function parseScript(source) {
       if (mod && m) {
         once = m.once;
         if (m.src !== null) {
-          if (!m.src) throw new Error('option condition: the condition is missing — [if <condition>]');
+          if (!m.src) throw new Error(sm('script.optionCondMissing'));
           src = m.src;
           const p = parseCondition(src);
-          if (p.error) throw new Error(`option condition: ${p.error}`);
+          if (p.error) throw new Error(sm('script.optionCond', { error: p.error }));
           cond = p.cond;
         }
         rest = rest.slice(mod[0].length).trim();
       }
-      if (!rest) throw new Error('the option has no label');
+      if (!rest) throw new Error(sm('script.optionNoLabel'));
       const body = hasChildren(L) ? childBlock(L, depth) : [];
       return { t: 'option', line: L.line, label: lineText(rest), cond, src, once, body };
     }
     if (text.startsWith('*')) {
-      if (kind !== 'vary') throw new Error('an alternative ("*") must be inside a cycle, seq or pick');
+      if (kind !== 'vary') throw new Error(sm('script.altOutside'));
       const inline = text.slice(1).trim();
       const body = [];
       if (inline) {
@@ -868,12 +873,12 @@ export function parseScript(source) {
         body.push(n);
       }
       if (hasChildren(L)) body.push(...childBlock(L, depth));
-      if (!body.length) throw new Error('an empty alternative');
+      if (!body.length) throw new Error(sm('script.altEmpty'));
       return { t: 'alt', line: L.line, body };
     }
     const said = dialogue(L, text);
     if (said) {
-      if (hasChildren(L)) rejectChildren(L, 'a line of dialogue');
+      if (hasChildren(L)) rejectChildren(L, sm('noun.dialogueLine'));
       return said;
     }
     const m = /^([a-z]+)(?:\s+([\s\S]*))?$/.exec(text);
@@ -881,12 +886,12 @@ export function parseScript(source) {
       const op = m[1];
       const rest = m[2] ?? '';
       if (op === 'if' || op === 'elif') {
-        if (!rest.trim()) throw new Error(`${op} <condition>`);
+        if (!rest.trim()) throw usageError(`${op} <condition>`);
         const p = parseCondition(rest);
-        if (p.error) throw new Error(`${op}: ${p.error}`);
+        if (p.error) throw new Error(sm('script.condError', { op, error: p.error }));
         if (op === 'elif') {
           const prev = siblings[siblings.length - 1];
-          if (!prev || prev.t !== 'if' || prev.otherwise) throw new Error('elif without an if before it');
+          if (!prev || prev.t !== 'if' || prev.otherwise) throw new Error(sm('script.elifNoIf'));
           prev.branches.push({ cond: p.cond, src: rest.trim(), body: childBlock(L, depth) });
           return null;
         }
@@ -895,7 +900,7 @@ export function parseScript(source) {
       if (op === 'else') {
         commandArgs(op, rest);
         const prev = siblings[siblings.length - 1];
-        if (!prev || prev.t !== 'if' || prev.otherwise) throw new Error('else without an if before it');
+        if (!prev || prev.t !== 'if' || prev.otherwise) throw new Error(sm('script.elseNoIf'));
         prev.otherwise = childBlock(L, depth);
         return null;
       }
@@ -910,13 +915,13 @@ export function parseScript(source) {
       if (op === 'cycle' || op === 'seq' || op === 'pick') {
         const { key } = commandArgs(op, rest);
         const alts = childBlock(L, depth, 'vary').filter((a) => a.t === 'alt').map((a) => a.body);
-        if (!alts.some((a) => a.length)) throw new Error(`a ${op} needs at least one "*" alternative`);
+        if (!alts.some((a) => a.length)) throw new Error(sm('script.varyNoAlt', { op }));
         return { t: 'vary', line: L.line, mode: op, key, alts };
       }
       if (op === 'choice') {
         const options = childBlock(L, depth, 'choice').filter((o) => o.t === 'option').map(({ t, ...o }) => o);
-        if (!options.length) throw new Error('a choice needs at least one option');
-        if (options.length > 8) throw new Error('a choice may offer at most 8 options');
+        if (!options.length) throw new Error(sm('script.choiceNoOption'));
+        if (options.length > 8) throw new Error(sm('script.choiceTooMany', { max: 8 }));
         return { t: 'choice', line: L.line, text: lineText(rest.trim()), options };
       }
       return simple(L, text);
@@ -934,15 +939,15 @@ export function parseScript(source) {
   const simple = (L, text, inline = false) => {
     const m = /^([a-z]+)(?:\s+([\s\S]*))?$/.exec(text);
     if (!m || !isOwnKey(SCRIPT_COMMANDS, m[1])) throw notACommand(text, false);
-    if (BLOCK_COMMANDS.has(m[1])) throw new Error(`"${m[1]}" needs a line of its own with an indented block`);
+    if (BLOCK_COMMANDS.has(m[1])) throw new Error(sm('script.blockOwnLine', { op: m[1] }));
     const args = commandArgs(m[1], m[2] ?? '');
-    if (!inline && hasChildren(L)) rejectChildren(L, `"${m[1]}"`);
+    if (!inline && hasChildren(L)) rejectChildren(L, sm('quoted', { s: m[1] }));
     return { t: 'cmd', line: L.line, op: m[1], args };
   };
 
   const nodes = block(lines.length ? lines[0].indent : 0, 0, 'script');
   while (k < lines.length) {
-    errors.push({ line: lines[k].line, msg: `unexpected indentation${indentHint}` });
+    errors.push({ line: lines[k].line, msg: sm('script.unexpectedIndent', { hint: indentHint }) });
     parked.add(lines[k].line);
     k++;
   }
@@ -1247,18 +1252,8 @@ export const BACKGROUND_OPS = new Set([
   'party',
 ]);
 
-/** Why a command outside `BACKGROUND_OPS` cannot run in the background. */
-const BACKGROUND_REASONS = Object.freeze({
-  cutscene: 'a cutscene holds the player',
-  camera: 'the camera stays with the player',
-  fade: 'a fade takes the screen from the player',
-  travel: 'travel takes the player to another level',
-  rest: 'resting holds the player',
-  shop: 'the shop needs the player',
-  builtin: 'a conversation needs the player',
-  ending: 'the ending holds the player',
-  time: 'a clock jump re-lights the scene and runs the time events at once',
-});
+/** The commands outside `BACKGROUND_OPS` with a reason of their own (storyStrings.js `bg.<op>`). */
+const BACKGROUND_REASONS = new Set(['cutscene', 'camera', 'fade', 'travel', 'rest', 'shop', 'builtin', 'ending', 'time']);
 
 /**
  * Why one node may not run in a background run ('' when it may): dialogue and `choice` never;
@@ -1272,17 +1267,17 @@ const BACKGROUND_REASONS = Object.freeze({
  */
 export function backgroundIssue(node) {
   switch (node?.t) {
-    case 'say': return 'dialogue needs the player';
-    case 'choice': return 'a choice needs the player\'s answer';
+    case 'say': return sm('bg.say');
+    case 'choice': return sm('bg.choice');
     case 'if': case 'loop': case 'once': case 'vary': return '';
     case 'cmd': {
       const op = node.op;
-      if (!BACKGROUND_OPS.has(op)) return isOwnKey(BACKGROUND_REASONS, op) ? BACKGROUND_REASONS[op] : `"${op}" needs the player`;
-      if ((op === 'walk' || op === 'face' || op === 'teleport') && isPlayerName(node.args?.who)) return `"${op} player": the player is the player's in the background`;
-      if (op === 'party' && node.args?.verb === 'menu') return 'the tactics panel needs the player';
+      if (!BACKGROUND_OPS.has(op)) return BACKGROUND_REASONS.has(op) ? sm(`bg.${op}`) : sm('bg.needsPlayer', { op });
+      if ((op === 'walk' || op === 'face' || op === 'teleport') && isPlayerName(node.args?.who)) return sm('bg.movePlayer', { op });
+      if (op === 'party' && node.args?.verb === 'menu') return sm('bg.partyMenu');
       return '';
     }
-    default: return 'not a line a background run knows';
+    default: return sm('bg.unknown');
   }
 }
 

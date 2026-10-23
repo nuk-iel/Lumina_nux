@@ -5,6 +5,7 @@
 import { h, icon } from './dom.js';
 import { tooltip } from './Tooltip.js';
 import { TOOLS } from '../tools/index.js';
+import { tr } from '../i18n.js';
 
 /** @import { EditorState } from '../EditorState.js' */
 
@@ -14,7 +15,7 @@ export class Toolbar {
   /** @param {HTMLElement} host @param {EditorState} state */
   constructor(host, state) {
     this.state = state;
-    this.el = h('nav', { class: 'le-toolbar', 'aria-label': 'Tools' });
+    this.el = h('nav', { class: 'le-toolbar', 'aria-label': tr('tools.toolbar.aria') });
     this.buttons = new Map();
     GROUPS.forEach((g, k) => {
       if (k) this.el.appendChild(h('div', { class: 'le-toolbar-sep' }));
@@ -25,7 +26,7 @@ export class Toolbar {
           class: 'le-tool-btn', type: 'button', 'aria-label': `${t.label} (${t.shortcut})`,
           onClick: () => state.setTool(t.id),
         }, icon(t.icon), h('span', { class: 'le-tool-key' }, t.shortcut));
-        tooltip(b, { title: t.label, key: t.shortcut, text: t.help.replace(/^[^—]*—\s*/, ''), place: 'right' });
+        tooltip(b, { title: t.label, key: t.shortcut, text: t.tip ?? t.help, place: 'right' });
         this.buttons.set(t.id, b);
         this.el.appendChild(b);
       }

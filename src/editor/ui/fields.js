@@ -17,6 +17,8 @@ import {
 import { parseScript } from '../../engine/level/StoryScript.js';
 import { conditionError } from '../../engine/level/StoryChecks.js';
 import { attachScriptKeys, fillErrors, popOutButton, scriptEditorDialog, scriptText, scriptValue } from './scriptEditor.js';
+import { tr, trn } from '../i18n.js';
+import { optionLabel } from '../catalogI18n.js';
 
 /**
  * @import { FieldDef } from '../../engine/level/types.js'
@@ -62,7 +64,7 @@ export function numberControl(o) {
   const input = h('input', {
     class: 'le-input le-num', type: 'number', id, step: String(step), inputMode: 'decimal',
     min: Number.isFinite(o.min) ? String(o.min) : null, max: Number.isFinite(o.max) ? String(o.max) : null,
-    placeholder: o.placeholder ?? (o.nullable ? 'auto' : ''),
+    placeholder: o.placeholder ?? (o.nullable ? tr('panels.field.auto') : ''),
   });
   const parse = (s) => {
     if (s === '' || s == null) return o.nullable ? null : undefined;
@@ -145,14 +147,14 @@ export function numberControl(o) {
     o.onChange(v);
   }, { passive: false });
 
-  const clearBtn = o.nullable ? h('button', { class: 'le-mini-btn', type: 'button', title: 'Clear (automatic)', onClick: () => { input.value = ''; o.onChange(null); } }, icon(ICONS.close)) : null;
+  const clearBtn = o.nullable ? h('button', { class: 'le-mini-btn', type: 'button', title: tr('panels.field.clearAuto'), onClick: () => { input.value = ''; o.onChange(null); } }, icon(ICONS.close)) : null;
   const el = h('div', { class: ['le-numctl', range && 'has-range'] }, range, h('div', { class: 'le-num-wrap' }, input, o.suffix ? h('span', { class: 'le-suffix' }, o.suffix) : null), clearBtn);
   let last = o.value;
   function set(v, mixed = false) {
     last = v;
     if (focusedIn(input.parentElement) && document.activeElement === input) return;
     input.value = mixed ? '' : v == null ? '' : fmt(v, 4);
-    input.placeholder = mixed ? 'mixed' : (o.placeholder ?? (o.nullable ? 'auto' : ''));
+    input.placeholder = mixed ? tr('panels.field.mixed') : (o.placeholder ?? (o.nullable ? tr('panels.field.auto') : ''));
     if (range && !sliding) {
       range.value = String(v ?? o.min);
       paintRange();
@@ -179,7 +181,7 @@ export function boolControl({ value, onChange, label = '', id = nextId() }) {
     input.checked = v === true;
     input.indeterminate = mixed || odd;
     el.classList.toggle('is-mixed', mixed || odd);
-    if (odd) el.title = `Not true or false: ${JSON.stringify(v)} — a click sets it`;
+    if (odd) el.title = tr('panels.field.notBool', { value: JSON.stringify(v) });
     else el.removeAttribute('title');
   };
   set(value);
@@ -191,10 +193,10 @@ export function selectControl({ value, options, onChange, id = nextId() }) {
   const sel = h('select', { class: 'le-input le-select', id });
   for (const opt of options) {
     const v = typeof opt === 'object' ? opt.value : opt;
-    const label = typeof opt === 'object' ? opt.label : opt === '' ? '(none)' : opt;
+    const label = typeof opt === 'object' ? opt.label : opt === '' ? tr('panels.field.none') : optionLabel(opt);
     sel.appendChild(h('option', { value: v }, label));
   }
-  const mixedOpt = h('option', { value: '__mixed__', disabled: true, hidden: true }, '— mixed —');
+  const mixedOpt = h('option', { value: '__mixed__', disabled: true, hidden: true }, tr('panels.field.mixedOption'));
   sel.appendChild(mixedOpt);
   sel.addEventListener('change', () => {
     if (sel.value !== '__mixed__') onChange(sel.value);
@@ -246,7 +248,7 @@ export function textControl({ value, onChange, multiline = false, rows = 3, plac
     last = mixed ? '' : (v ?? '');
     if (document.activeElement === el) return;
     el.value = mixed ? '' : (v ?? '');
-    el.placeholder = mixed ? 'mixed' : placeholder;
+    el.placeholder = mixed ? tr('panels.field.mixed') : placeholder;
   };
   set(value);
   return { el, input: el, set };
@@ -351,11 +353,11 @@ export function createFieldEditor(field, ctx) {
     case 'lines': {
       wide = true;
       const count = h('span', { class: 'le-field-meta' });
-      const upd = (t) => { const n = textToLines(t).length; count.textContent = `${n} page${n === 1 ? '' : 's'}`; };
+      const upd = (t) => { count.textContent = trn('panels.field.pages', textToLines(t).length); };
       // pages the edit did not touch are kept exactly as they were (see mergeLinesText)
       let cur = ctx.value;
       let mixedNow = !!ctx.mixed;
-      const inner = textControl({ id, value: linesToText(ctx.value), multiline: true, rows: 4, placeholder: 'One paragraph per page…', onChange: (t) => ctx.apply(mixedNow ? textToLines(t) : mergeLinesText(cur, t)), onInput: upd });
+      const inner = textControl({ id, value: linesToText(ctx.value), multiline: true, rows: 4, placeholder: tr('panels.field.linesPlaceholder'), onChange: (t) => ctx.apply(mixedNow ? textToLines(t) : mergeLinesText(cur, t)), onInput: upd });
       upd(linesToText(ctx.value));
       extra = count;
       ctl = { el: inner.el, set: (v, mixed) => { cur = v; mixedNow = !!mixed; inner.set(linesToText(v), mixed); if (document.activeElement !== inner.el) upd(linesToText(v)); } };
@@ -367,14 +369,14 @@ export function createFieldEditor(field, ctx) {
       const upd = (t) => {
         const d = parseDialogueText(t);
         const choices = d.filter((p) => typeof p === 'object').length;
-        count.textContent = `${d.length} page${d.length === 1 ? '' : 's'}${choices ? ` · ${choices} choice${choices === 1 ? '' : 's'}` : ''}`;
+        count.textContent = `${trn('panels.field.pages', d.length)}${choices ? ` · ${trn('panels.field.choices', choices)}` : ''}`;
       };
       // pages the edit did not touch are kept exactly as they were (see mergeDialogueText)
       let cur = ctx.value ?? [];
       let mixedNow = !!ctx.mixed;
       const inner = textControl({
         id, value: dialogueToText(ctx.value ?? []), multiline: true, rows: 6,
-        placeholder: 'Hello, traveler!\n\nA blank line starts a new page.\n\nShall we? [Yes | No]',
+        placeholder: tr('panels.field.dialoguePlaceholder'),
         onChange: (t) => ctx.apply(mixedNow ? parseDialogueText(t) : mergeDialogueText(cur, t)), onInput: upd,
       });
       upd(dialogueToText(ctx.value ?? []));
@@ -399,13 +401,13 @@ export function createFieldEditor(field, ctx) {
         shown = t;
         const { errors } = parseScript(t);
         const n = scriptValue(t).length;
-        count.textContent = `${n} line${n === 1 ? '' : 's'}${errors.length ? ` · ${errors.length} problem${errors.length === 1 ? '' : 's'}` : ''}`;
+        count.textContent = `${trn('panels.field.lines', n)}${errors.length ? ` · ${trn('panels.field.problems', errors.length)}` : ''}`;
         count.classList.toggle('is-warn', errors.length > 0);
         fillErrors(issues, errors, () => /** @type {HTMLTextAreaElement} */ (inner.input), 3);
       };
       const inner = textControl({
         id, value: scriptText(ctx.value), multiline: true, rows: 8, mono: true,
-        placeholder: 'Name: Hello, traveler!\nchoice Will you help?\n  > Yes\n    set helping',
+        placeholder: tr('panels.field.scriptPlaceholder'),
         onChange: (t) => ctx.apply(scriptValue(t)), onInput: upd,
       });
       attachScriptKeys(/** @type {HTMLTextAreaElement} */ (inner.input), { onSubmit: () => inner.input.blur() });
@@ -439,7 +441,7 @@ export function createFieldEditor(field, ctx) {
         issue.hidden = !msgs.length;
         issue.textContent = msgs.join('\n');
       };
-      const inner = textControl({ id, value: ctx.value ?? '', onChange: (v) => ctx.apply(v), onInput: check, placeholder: 'flag, or e.g. "a and not b"' });
+      const inner = textControl({ id, value: ctx.value ?? '', onChange: (v) => ctx.apply(v), onInput: check, placeholder: tr('panels.field.conditionPlaceholder') });
       inner.input.setAttribute('spellcheck', 'false');
       inner.input.addEventListener('blur', () => check(/** @type {HTMLInputElement} */ (inner.input).value));
       check(ctx.value ?? '');
@@ -454,7 +456,7 @@ export function createFieldEditor(field, ctx) {
   }
   if (ctx.mixed) ctl.set(ctx.value, true);
   const label = h('span', null, field.label, extra);
-  const el = h('div', { class: ['le-field', wide && 'is-wide', `is-${field.type}`], title: field.help ? `${field.label} — ${field.help}` : field.label },
+  const el = h('div', { class: ['le-field', wide && 'is-wide', `is-${field.type}`], title: field.help ? tr('panels.field.tip', { label: field.label, help: field.help }) : field.label },
     h('label', { class: 'le-field-label', htmlFor: id }, label),
     h('div', { class: 'le-field-control' }, ctl.el, below),
     wide && field.help ? h('div', { class: 'le-field-help' }, field.help) : null,

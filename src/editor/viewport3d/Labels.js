@@ -41,6 +41,9 @@ const CSS = `
   border: 1px solid rgba(201, 164, 92, 0.45); opacity: 0; transition: opacity 0.25s;
 }
 .lvp3d-badge.on { opacity: 1; }
+:lang(zh) .lvp3d-label, :lang(zh) .lvp3d-badge { font-family: system-ui, -apple-system, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif; }
+:lang(zh) .lvp3d-label.tool { font-family: ui-monospace, 'Cascadia Mono', Consolas, 'Noto Sans SC', 'Microsoft YaHei', monospace; }
+:lang(zh) .lvp3d-badge { letter-spacing: 0.04em; }
 `;
 
 /** Inject the viewport stylesheet once. */

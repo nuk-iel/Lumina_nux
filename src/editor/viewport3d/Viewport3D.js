@@ -31,6 +31,7 @@ import { LabelLayer, ensureStyles } from './Labels.js';
 import { dataColliders, levelStartTest, enemyScatterRect } from '../enemyGroups.js';
 import { storyHiddenIds } from '../story.js';
 import { reportToolError } from '../EditorState.js';
+import { tr } from '../i18n.js';
 
 /**
  * @import { MaterialProperties } from './types.js'
@@ -1081,7 +1082,7 @@ export class Viewport3D {
     // (the weather effects' programs for the new render path, before the weather shows them;
     // turning the atmosphere on warms them itself)
     else if (postChanged) this._warmWeatherFx();
-    this._showBadge(v.cameraMode === 'game' ? 'Game camera' : '');
+    this._showBadge(v.cameraMode === 'game' ? tr('tools.view3d.gameCamera') : '');
     this.actors.setMarkerDim(v.cameraMode === 'game' ? 0.35 : 1);
     this.root.classList.toggle('lvp3d-game', v.cameraMode === 'game');
   }

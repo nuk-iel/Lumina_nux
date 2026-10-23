@@ -8,7 +8,7 @@
  */
 import { TextureLibrary } from '../engine/pixel/Textures.js';
 import {
-  createEmptyLevel, validateLevel, parseLevel, tileDef, getHeightLevel, LEVEL_FORMAT,
+  createEmptyLevel, validateLevelIssues, parseLevel, tileDef, getHeightLevel, LEVEL_FORMAT,
 } from '../engine/level/LevelFormat.js';
 import { OBJECT_TYPES, ENEMY_INFO, enemyStartPoints, levelHasCombat } from '../engine/level/ObjectCatalog.js';
 import {
@@ -55,7 +55,17 @@ import { ownValue } from '../engine/utils/own.js';
 import { textKeyWarnings, textMapOf, parseKeyInput, findTextKey } from './textKeys.js';
 import { levelTexts } from '../engine/i18n/TextKeys.js';
 import { getLang } from '../engine/i18n/I18n.js';
-import { tr, editorLang, langName, switchLanguage, EDITOR_LANGS } from './i18n.js';
+import {
+  tr, trn, andList, commaList, editorLang, langName, switchLanguage, EDITOR_LANGS,
+} from './i18n.js';
+import { BRAND_NAME } from './brand.js';
+
+/**
+ * A game URL in the editor's language: `&lang=` added unless English (a `?lang=` on the editor is
+ * not saved, so the game would not otherwise follow it).
+ * @param {string} url
+ */
+const withLang = (url) => (getLang() === 'en' ? url : `${url}${url.includes('?') ? '&' : '?'}lang=${getLang()}`);
 
 /**
  * @import { Level, LevelObjectOf } from '../engine/level/types.js'
@@ -98,7 +108,8 @@ export function projectFile(ref) {
 
 /**
  * A file as copy-on-write and *Find by text key…* name it: `public/levels/<name>.json` (or a
- * campaign's), `browser slot “<name>”`, a file's name; '' for a new document.
+ * campaign's), `browser slot “<name>”`, a file's name; '' for a new document. An identity (the
+ * same in every language): `fileDisplay` is its shown form.
  * @param {FileRef} ref
  * @returns {string}
  */
@@ -106,6 +117,16 @@ function fileLabel(ref) {
   if (ref.kind === 'project') return projectFile(ref);
   if (ref.kind === 'local') return `browser slot “${ref.name}”`;
   return ref.kind === 'file' ? ref.name : '';
+}
+
+/**
+ * A file as the UI names it (`fileLabel` in the editor's language).
+ * @param {FileRef} ref
+ * @returns {string}
+ */
+function fileDisplay(ref) {
+  if (ref.kind === 'local') return tr('app.file.local', { name: ref.name });
+  return fileLabel(ref);
 }
 
 /**
@@ -165,6 +186,8 @@ export class EditorApp {
     this._heldDropMsg = '';
     /** The read of the file a *Save As* left (`_rememberCopiedFrom`; scripted checks await it). */
     this._copiedRead = Promise.resolve();
+    /** The shown names of the files a *Save As* left, by their `fileLabel`. @type {Map<string, string>} */
+    this._copiedNames = new Map();
 
     this._loadPrefs();
     this.commands = this._buildCommands();
@@ -234,7 +257,7 @@ export class EditorApp {
     } catch (e) {
       console.warn('[editor] startup:', e);
       this._startBlank();
-      alertDialog({ title: 'Could not open the level', message: String(e?.message ?? e), icon: ICONS.warning });
+      alertDialog({ title: tr('app.open.failed'), message: String(e?.message ?? e), icon: ICONS.warning });
     }
   }
 
@@ -257,11 +280,11 @@ export class EditorApp {
     const restore = await restoreDialog(meta, { older, reopened: !!only });
     if (restore === true) {
       const r = loadAutosave();
-      if (!r) { this.state.notify('The autosaved copy could not be read'); return false; }
+      if (!r) { this.state.notify(tr('app.restore.unreadable'), { error: true }); return false; }
       // the copy now lives in this editor (and in this session's own autosave from here on)
       discardAutosave();
       this._replaceDoc(r.level, ref, { unsaved: true });
-      this.state.notify(`Restored the autosaved “${r.level.name}”`);
+      this.state.notify(tr('app.restore.done', { name: r.level.name }));
       return true;
     }
     // an explicit "Discard"; closing the dialog (Esc / ×) keeps the copy (it moves to
@@ -274,11 +297,11 @@ export class EditorApp {
   async openRecovered(id, { confirm = true } = {}) {
     const entry = listRecovered().find((e) => e.id === id);
     const r = loadRecovered(id);
-    if (!entry || !r) { alertDialog({ title: 'Could not open the copy', message: 'The recovered copy is no longer in this browser\'s storage.', icon: ICONS.warning }); return false; }
-    if (confirm && !(await this.confirmDiscard('open the recovered copy'))) return false;
+    if (!entry || !r) { alertDialog({ title: tr('app.recovered.failed'), message: tr('app.recovered.gone'), icon: ICONS.warning }); return false; }
+    if (confirm && !(await this.confirmDiscard('openRecovered'))) return false;
     this._replaceDoc(r.level, normalizeRef(entry.fileRef), { unsaved: true });
     deleteRecovered(id);
-    this.state.notify(`Opened the recovered copy of “${r.level.name}” — save it to keep it`);
+    this.state.notify(tr('app.recovered.opened', { name: r.level.name }));
     return true;
   }
 
@@ -306,7 +329,7 @@ export class EditorApp {
   async _mount3D() {
     const slot = this.vp3dHost;
     const load = viewport3dModules['./viewport3d/Viewport3D.js'];
-    if (!load) { this._placeholder3D('The 3D preview module is not installed yet.'); return; }
+    if (!load) { this._placeholder3D(tr('app.vp3d.notInstalled')); return; }
     try {
       const mod = await load();
       if (typeof mod.Viewport3D !== 'function') throw new Error('Viewport3D.js does not export a Viewport3D class');
@@ -332,18 +355,18 @@ export class EditorApp {
     } catch (e) {
       console.warn('[editor] 3D preview unavailable:', e);
       this.view3d = null;
-      this._placeholder3D(`The 3D preview could not start: ${e?.message ?? e}`);
+      this._placeholder3D(tr('app.vp3d.couldNotStart', { message: e?.message ?? e }));
     }
   }
 
   _placeholder3D(message) {
     this.vp3dHost.replaceChildren(h('div', { class: 'le-vp-placeholder' },
       icon(ICONS.cube, 'le-icon le-vp-placeholder-icon'),
-      h('div', { class: 'le-vp-placeholder-title' }, '3D preview unavailable'),
-      h('div', { class: 'le-vp-placeholder-text' }, message, ' The 2D map is fully editable on its own.'),
+      h('div', { class: 'le-vp-placeholder-title' }, tr('app.vp3d.unavailable')),
+      h('div', { class: 'le-vp-placeholder-text' }, message, tr('app.vp3d.unavailableMore')),
       h('div', { class: 'le-vp-placeholder-actions' },
-        h('button', { class: 'le-btn is-small', type: 'button', onClick: () => { this.vp3dHost.replaceChildren(); this._mount3D(); } }, 'Retry'),
-        h('button', { class: 'le-btn is-small', type: 'button', onClick: () => this.state.setView({ layout: '2d' }) }, icon(ICONS.layout2d), '2D only'))));
+        h('button', { class: 'le-btn is-small', type: 'button', onClick: () => { this.vp3dHost.replaceChildren(); this._mount3D(); } }, tr('app.vp3d.retry')),
+        h('button', { class: 'le-btn is-small', type: 'button', onClick: () => this.state.setView({ layout: '2d' }) }, icon(ICONS.layout2d), tr('app.vp3d.only2d')))));
   }
 
   // -------------------------------------------------------------------------------------------
@@ -357,34 +380,34 @@ export class EditorApp {
 
     // ---- menu bar
     this.menubarEl = h('header', { class: 'le-menubar' });
-    const brand = h('div', { class: 'le-brand', title: 'Luminati Level Editor' }, h('span', { class: 'le-brand-logo', html: LOGO_SVG }), h('span', { class: 'le-brand-name' }, 'Luminati'), h('span', { class: 'le-brand-sub' }, 'Level Editor'));
+    const brand = h('div', { class: 'le-brand', title: tr('app.brand.title', { brand: BRAND_NAME }) }, h('span', { class: 'le-brand-logo', html: LOGO_SVG }), h('span', { class: 'le-brand-name' }, BRAND_NAME), h('span', { class: 'le-brand-sub' }, tr('app.brand.sub')));
     this.menubarEl.appendChild(brand);
     this.menubar = new MenuBar(this.menubarEl, { menus: this._menus(), commands: this.commands, run: (id) => this.run(id) });
 
     // the level's display name (title screen, banner): click to rename / edit the settings
     this.docNameText = h('span', { class: 'le-doc-name-text' });
     this.docName = h('button', { class: 'le-doc-name', type: 'button', onClick: () => this.run('level.settings') }, this.docNameText, icon(ICONS.pencil, 'le-icon le-doc-name-edit'));
-    tooltip(this.docName, { title: 'Rename · level settings', text: 'The level name is shown on the title screen and in the banner. Also: subtitle, environment, camera and water.', place: 'bottom' });
-    this.dirtyDot = h('span', { class: 'le-dirty-dot', title: 'Unsaved changes' });
+    tooltip(this.docName, { title: tr('app.doc.renameTitle'), text: tr('app.doc.renameText'), place: 'bottom' });
+    this.dirtyDot = h('span', { class: 'le-dirty-dot', title: tr('app.doc.unsaved') });
     this.docWhere = h('span', { class: 'le-doc-where' });
     this.menubarEl.appendChild(h('div', { class: 'le-doc' }, this.docName, this.dirtyDot, this.docWhere));
 
     const undoBtn = h('button', { class: 'le-icon-btn', type: 'button', onClick: () => this.run('edit.undo') }, icon(ICONS.undo));
     const redoBtn = h('button', { class: 'le-icon-btn', type: 'button', onClick: () => this.run('edit.redo') }, icon(ICONS.redo));
-    tooltip(undoBtn, () => ({ title: st.canUndo ? `Undo ${st.undoLabel}` : 'Nothing to undo', key: 'Ctrl+Z', place: 'bottom' }));
-    tooltip(redoBtn, () => ({ title: st.canRedo ? `Redo ${st.redoLabel}` : 'Nothing to redo', key: 'Ctrl+Y', place: 'bottom' }));
+    tooltip(undoBtn, () => ({ title: st.canUndo ? tr('app.cmd.undoWhat', { what: st.undoLabel }) : tr('app.history.nothingToUndo'), key: 'Ctrl+Z', place: 'bottom' }));
+    tooltip(redoBtn, () => ({ title: st.canRedo ? tr('app.cmd.redoWhat', { what: st.redoLabel }) : tr('app.history.nothingToRedo'), key: 'Ctrl+Y', place: 'bottom' }));
     this.undoBtn = undoBtn;
     this.redoBtn = redoBtn;
     this.layoutSeg = segmented({
       options: [
-        { value: 'split', icon: ICONS.layoutSplit, label: '3D + 2D', iconOnly: true, title: '3D + 2D map (1)' },
-        { value: '3d', icon: ICONS.layout3d, label: '3D', iconOnly: true, title: '3D only (2)' },
-        { value: '2d', icon: ICONS.layout2d, label: '2D', iconOnly: true, title: '2D map only (3)' },
+        { value: 'split', icon: ICONS.layoutSplit, label: '3D + 2D', iconOnly: true, title: tr('app.layout.split') },
+        { value: '3d', icon: ICONS.layout3d, label: '3D', iconOnly: true, title: tr('app.layout.only3d') },
+        { value: '2d', icon: ICONS.layout2d, label: '2D', iconOnly: true, title: tr('app.layout.only2d') },
       ],
       value: st.view.layout, onChange: (v) => st.setView({ layout: v }), small: true, className: 'le-layout-seg',
     });
-    const playBtn = h('button', { class: 'le-play-btn', type: 'button', onClick: () => this.run('level.playtest') }, icon(ICONS.play), h('span', null, 'Play'));
-    tooltip(playBtn, { title: 'Play-test this level', key: 'F5', text: 'Validates, saves to the play-test slot and opens the game in a new tab.', place: 'bottom' });
+    const playBtn = h('button', { class: 'le-play-btn', type: 'button', onClick: () => this.run('level.playtest') }, icon(ICONS.play), h('span', null, tr('app.play.button')));
+    tooltip(playBtn, { title: tr('app.play.title'), key: 'F5', text: tr('app.play.text'), place: 'bottom' });
     this.menubarEl.appendChild(h('div', { class: 'le-menubar-right' }, undoBtn, redoBtn, h('span', { class: 'le-vsep' }), this.layoutSeg.el, h('span', { class: 'le-vsep' }), playBtn));
 
     // ---- main area
@@ -395,9 +418,9 @@ export class EditorApp {
     this.vp3dHost = h('div', { class: 'le-vp-host' });
     this.vp2dHost = h('div', { class: 'le-vp-host' });
     // "Building the 3D preview…" until the first full build is on screen (and during big loads)
-    this.vp3dLoading = h('div', { class: 'le-vp-loading is-on', role: 'status' }, h('span', { class: 'le-spinner' }), h('span', { class: 'le-vp-loading-text' }, 'Building the 3D preview…'));
-    this.vp3d = h('section', { class: 'le-vp le-vp3d', 'aria-label': '3D preview' }, this.vp3dHost, this.vp3dLoading,
-      h('div', { class: 'le-vp-bar' }, h('span', { class: 'le-vp-title' }, icon(ICONS.cube), h('span', { class: 'le-vp-title-text' }, '3D Preview')), this._build3DTools()));
+    this.vp3dLoading = h('div', { class: 'le-vp-loading is-on', role: 'status' }, h('span', { class: 'le-spinner' }), h('span', { class: 'le-vp-loading-text' }, tr('app.vp3d.building')));
+    this.vp3d = h('section', { class: 'le-vp le-vp3d', 'aria-label': tr('app.vp3d.aria') }, this.vp3dHost, this.vp3dLoading,
+      h('div', { class: 'le-vp-bar' }, h('span', { class: 'le-vp-title' }, icon(ICONS.cube), h('span', { class: 'le-vp-title-text' }, tr('app.vp3d.title'))), this._build3DTools()));
     const zoomLabel = h('span', { class: 'le-vp-zoom' });
     this._zoomLabel = zoomLabel;
     const vpBtn = (ic, title, key, fn, cls = '') => {
@@ -405,20 +428,20 @@ export class EditorApp {
       tooltip(b, { title, key, place: 'bottom' });
       return b;
     };
-    this.gridBtn = vpBtn(ICONS.grid, 'Grid', 'Ctrl+G', () => this.run('view.grid'));
-    this.texBtn = vpBtn(ICONS.texture, 'Textured map', '', () => this.run('view.textured2d'));
-    this.vp2d = h('section', { class: 'le-vp le-vp2d', 'aria-label': '2D map' }, this.vp2dHost,
+    this.gridBtn = vpBtn(ICONS.grid, tr('app.cmd.grid'), 'Ctrl+G', () => this.run('view.grid'));
+    this.texBtn = vpBtn(ICONS.texture, tr('app.vp2d.textured'), '', () => this.run('view.textured2d'));
+    this.vp2d = h('section', { class: 'le-vp le-vp2d', 'aria-label': tr('app.vp2d.aria') }, this.vp2dHost,
       h('div', { class: 'le-vp-bar' },
-        h('span', { class: 'le-vp-title' }, icon(ICONS.map), h('span', { class: 'le-vp-title-text' }, '2D Map')),
+        h('span', { class: 'le-vp-title' }, icon(ICONS.map), h('span', { class: 'le-vp-title-text' }, tr('app.vp2d.title'))),
         h('span', { class: 'le-vp-tools' },
           this.gridBtn, this.texBtn,
           h('span', { class: 'le-vp-sep' }),
           h('span', { class: 'le-vp-zoomgroup' },
-            vpBtn(ICONS.minus, 'Zoom out', '', () => this.view2d?.zoomBy(1 / 1.4)),
+            vpBtn(ICONS.minus, tr('app.vp2d.zoomOut'), '', () => this.view2d?.zoomBy(1 / 1.4)),
             zoomLabel,
-            vpBtn(ICONS.plus, 'Zoom in', '', () => this.view2d?.zoomBy(1.4))),
-          vpBtn(ICONS.frame, 'Frame level', 'Home', () => this.run('view.frameLevel')))));
-    this.splitter = h('div', { class: 'le-splitter', role: 'separator', 'aria-orientation': 'vertical', title: 'Drag to resize · double-click to reset' });
+            vpBtn(ICONS.plus, tr('app.vp2d.zoomIn'), '', () => this.view2d?.zoomBy(1.4))),
+          vpBtn(ICONS.frame, tr('app.cmd.frameLevel'), 'Home', () => this.run('view.frameLevel')))));
+    this.splitter = h('div', { class: 'le-splitter', role: 'separator', 'aria-orientation': 'vertical', title: tr('app.splitter.split') });
     this.viewports = h('div', { class: 'le-viewports' }, this.vp3d, this.splitter, this.vp2d);
     const center = h('main', { class: 'le-center' }, this.viewports);
 
@@ -434,7 +457,7 @@ export class EditorApp {
       playtest: () => this.run('level.playtest'),
     };
     this.inspector = new Inspector(right, st, actions);
-    this.rightSplitter = h('div', { class: 'le-hsplitter', role: 'separator', 'aria-orientation': 'horizontal', title: 'Drag to resize' });
+    this.rightSplitter = h('div', { class: 'le-hsplitter', role: 'separator', 'aria-orientation': 'horizontal', title: tr('app.splitter.panels') });
     right.appendChild(this.rightSplitter);
     this.outliner = new Outliner(right, st, actions);
 
@@ -442,9 +465,9 @@ export class EditorApp {
     this.root.append(this.menubarEl, this.main);
     this.statusbar = new StatusBar(this.root, st);
 
-    this.dropOverlay = h('div', { class: 'le-drop-overlay' }, h('div', { class: 'le-drop-card' }, icon(ICONS.upload, 'le-icon le-drop-icon'), h('div', null, 'Drop a level .json to open it')));
+    this.dropOverlay = h('div', { class: 'le-drop-overlay' }, h('div', { class: 'le-drop-card' }, icon(ICONS.upload, 'le-icon le-drop-icon'), h('div', null, tr('app.drop'))));
     this.root.appendChild(this.dropOverlay);
-    this.loadingOverlay = h('div', { class: 'le-loading-overlay', role: 'status' }, h('div', { class: 'le-drop-card' }, h('span', { class: 'le-spinner' }), h('div', { class: 'le-loading-text' }, 'Loading…')));
+    this.loadingOverlay = h('div', { class: 'le-loading-overlay', role: 'status' }, h('div', { class: 'le-drop-card' }, h('span', { class: 'le-spinner' }), h('div', { class: 'le-loading-text' }, tr('app.loading'))));
     this.root.appendChild(this.loadingOverlay);
     // a mouse click leaves no focus on buttons outside dialogs: Enter / Space then never
     // re-trigger the last clicked toolbar button, and shortcuts reach the views
@@ -466,17 +489,17 @@ export class EditorApp {
   /** The 3D bar's tools: preview time of day (follows the level's start time) and the camera help. */
   _build3DTools() {
     const st = this.state;
-    const range = h('input', { class: 'le-range le-time-range', type: 'range', min: '0', max: '24', step: '0.25', 'aria-label': 'Preview time of day' });
+    const range = h('input', { class: 'le-range le-time-range', type: 'range', min: '0', max: '24', step: '0.25', 'aria-label': tr('app.vp3d.timeAria') });
     const label = h('span', { class: 'le-vp-time' });
-    const link = h('button', { class: 'le-vp-btn le-time-link', type: 'button', 'aria-label': 'Follow the level start time' }, icon(ICONS.link));
-    tooltip(link, () => ({ title: st.view.timeFollow !== false ? 'Following the level start time' : 'Follow the level start time', text: 'The preview shows the level at its start time (Level settings › Start time). Drag the slider to preview another hour.', place: 'top' }));
+    const link = h('button', { class: 'le-vp-btn le-time-link', type: 'button', 'aria-label': tr('app.vp3d.follow') }, icon(ICONS.link));
+    tooltip(link, () => ({ title: st.view.timeFollow !== false ? tr('app.vp3d.following') : tr('app.vp3d.follow'), text: tr('app.vp3d.followText'), place: 'top' }));
     range.addEventListener('input', () => st.setView({ timeOfDay: Number(range.value), timeFollow: false }));
     // mouse users go back to the views: the slider must not keep the keyboard
     range.addEventListener('pointerup', () => setTimeout(() => range.blur(), 0));
     range.addEventListener('change', () => { if (document.activeElement === range && !range.matches(':focus-visible')) range.blur(); });
     link.addEventListener('click', () => st.setView({ timeFollow: true, timeOfDay: Number(st.level.environment?.timeOfDay ?? 17.2) }));
-    const help = h('button', { class: 'le-vp-btn', type: 'button', 'aria-label': '3D view controls' }, icon(ICONS.help));
-    tooltip(help, { title: '3D view controls', text: 'Right-drag: orbit · Middle-drag, Shift+right-drag or Space+drag: pan · Wheel: zoom · F / double-click: focus · Hold the right button + WASD / QE: fly · Game camera: Q / E rotate', place: 'top' });
+    const help = h('button', { class: 'le-vp-btn', type: 'button', 'aria-label': tr('app.vp3d.controls') }, icon(ICONS.help));
+    tooltip(help, { title: tr('app.vp3d.controls'), text: tr('app.vp3d.controlsText'), place: 'top' });
     help.addEventListener('click', () => this.run('help.shortcuts'));
     this._timeUI = { range, label, link };
     this._syncTimeUI();
@@ -504,7 +527,7 @@ export class EditorApp {
     if (Number.isFinite(t) && t !== st.view.timeOfDay) st.setView({ timeOfDay: t });
   }
 
-  _set3DLoading(on, text = 'Building the 3D preview…') {
+  _set3DLoading(on, text = tr('app.vp3d.building')) {
     if (!this.vp3dLoading) return;
     this.vp3dLoading.lastChild.textContent = text;
     this.vp3dLoading.classList.toggle('is-on', !!on);
@@ -658,7 +681,7 @@ export class EditorApp {
     });
     // undo / redo / a cancelled stroke left hidden objects out of the selection they restored
     st.on('selectionFiltered', (ids) => {
-      const msg = leftOutMessage(st, ids, ['left the selection', 'left the selection']);
+      const msg = leftOutMessage(st, ids, 'leftSelection');
       if (msg) st.notify(msg);
     });
     st.on('dirty', () => this._updateDoc());
@@ -695,18 +718,18 @@ export class EditorApp {
   _updateDoc() {
     const st = this.state;
     const ref = st.fileRef;
-    const name = st.level.name || 'Untitled';
+    const name = st.level.name || tr('common.untitled');
     this.docNameText.textContent = name;
     this.dirtyDot.classList.toggle('is-on', st.dirty);
     this.dirtyDot.classList.toggle('is-warn', st.dirty && !!this._autosaveFailed);
-    this.dirtyDot.title = st.dirty && this._autosaveFailed ? 'Unsaved changes — autosave failed (browser storage full): save your level' : 'Unsaved changes';
+    this.dirtyDot.title = st.dirty && this._autosaveFailed ? tr('app.doc.unsavedAutosaveFailed') : tr('app.doc.unsaved');
     this.root.classList.toggle('is-dirty', st.dirty);
     const where = ref.kind === 'project' ? projectFile(ref)
-      : ref.kind === 'local' ? `browser · ${ref.name}`
-        : ref.kind === 'file' ? `file · ${ref.name}` : 'not saved yet';
+      : ref.kind === 'local' ? tr('app.doc.whereLocal', { name: ref.name })
+        : ref.kind === 'file' ? tr('app.doc.whereFile', { name: ref.name }) : tr('app.doc.whereNew');
     this.docWhere.textContent = where;
     this.docWhere.className = `le-doc-where is-${ref.kind}`;
-    document.title = `${st.dirty ? '● ' : ''}${name} — Luminati Level Editor`;
+    document.title = `${st.dirty ? '● ' : ''}${tr('app.doc.title', { name, brand: BRAND_NAME })}`;
   }
 
   // -------------------------------------------------------------------------------------------
@@ -758,7 +781,7 @@ export class EditorApp {
     if (!this._autosaveFailed) {
       this._autosaveFailed = true;
       this._updateDoc();
-      st.notify('Autosave failed — browser storage is full or unavailable. Save your level (Ctrl+S).');
+      st.notify(tr('app.autosaveFailed'), { error: true });
     }
   }
 
@@ -791,7 +814,7 @@ export class EditorApp {
         st.cancel();
         try { tool.deactivate?.(st); tool.activate?.(st); } catch (err) { console.warn('[editor] tool reset:', err); }
         st.emit('preview');
-        st.notify('Cancelled');
+        st.notify(tr('app.cancelled'));
         handled = true;
       }
       if (handled || e.ctrlKey || e.metaKey || /^F\d+$/.test(e.key)) e.preventDefault();
@@ -836,7 +859,7 @@ export class EditorApp {
     this.clipboard = objs;
     try { e.clipboardData.setData('text/plain', JSON.stringify({ format: CLIPBOARD_FORMAT, objects: objs }, null, 1)); } catch { /* internal clipboard only */ }
     if (cut) deleteSelection(this.state);
-    this.state.notify(`${cut ? 'Cut' : 'Copied'} ${objs.length} object${objs.length === 1 ? '' : 's'}`);
+    this.state.notify(cut ? trn('app.clip.cut', objs.length) : trn('app.clip.copied', objs.length));
   }
 
   _onPaste(e) {
@@ -851,7 +874,7 @@ export class EditorApp {
           e.preventDefault();
           // a whole level replaces the document: ask about unsaved changes first; the pasted
           // level is not saved anywhere, so it stays marked unsaved
-          this._openParsed(() => parseLevel(data), { kind: 'new', name: '' }, 'the clipboard', { confirm: true, unsaved: true });
+          this._openParsed(() => parseLevel(data), { kind: 'new', name: '' }, tr('app.file.clipboard'), { confirm: true, unsaved: true });
           return;
         }
       }
@@ -864,7 +887,7 @@ export class EditorApp {
 
   /** Paste objects at the pointer (when it is over a view) or offset from the originals. */
   paste(objs = this.clipboard) {
-    if (!objs?.length) { this.state.notify('The clipboard is empty'); return; }
+    if (!objs?.length) { this.state.notify(tr('app.clip.empty')); return; }
     const hv = this.state.hover;
     const added = pasteObjects(this.state, objs, hv ? { x: hv.x, z: hv.z } : null);
     this.state.notify(this._pastedMessage(added));
@@ -876,7 +899,7 @@ export class EditorApp {
    */
   _pastedMessage(added) {
     const left = hiddenOnly(this.state, added.map((o) => o.id));
-    return `Pasted ${added.length} object${added.length === 1 ? '' : 's'}${left.length ? ` · ${leftOutMessage(this.state, left, ['is not selected', 'are not selected'])}` : ''}`;
+    return `${trn('app.clip.pasted', added.length)}${left.length ? ` · ${leftOutMessage(this.state, left, 'notSelected')}` : ''}`;
   }
 
   // -------------------------------------------------------------------------------------------
@@ -891,71 +914,71 @@ export class EditorApp {
     const toggleView = (k) => () => st.setView({ [k]: !(v()[k] !== false) });
     /** @type {Record<string, MenuCommand>} */
     const c = {
-      'file.new': { label: 'New level…', shortcut: 'Ctrl+N', aliases: ['Alt+N'], icon: ICONS.newFile, run: () => this.newLevel() },
-      'file.open': { label: 'Open…', shortcut: 'Ctrl+O', icon: ICONS.open, run: () => this.openDialog() },
-      'file.openFile': { label: 'Open file from disk…', icon: ICONS.file, run: () => this.openFromDisk() },
-      'file.save': { label: 'Save', shortcut: 'Ctrl+S', icon: ICONS.save, run: () => this.save() },
-      'file.saveAs': { label: 'Save as…', shortcut: 'Ctrl+Shift+S', icon: ICONS.saveAs, run: () => this.saveAs() },
-      'file.export': { label: 'Download .json', shortcut: 'Ctrl+E', icon: ICONS.download, run: () => this.exportFile(), hint: 'Download a copy of the level as a file' },
-      'file.playtest': { label: 'Play-test', shortcut: 'F5', icon: ICONS.play, run: () => this.playtest() },
+      'file.new': { label: tr('app.cmd.fileNew'), shortcut: 'Ctrl+N', aliases: ['Alt+N'], icon: ICONS.newFile, run: () => this.newLevel() },
+      'file.open': { label: tr('app.cmd.fileOpen'), shortcut: 'Ctrl+O', icon: ICONS.open, run: () => this.openDialog() },
+      'file.openFile': { label: tr('app.cmd.fileOpenFile'), icon: ICONS.file, run: () => this.openFromDisk() },
+      'file.save': { label: tr('common.save'), shortcut: 'Ctrl+S', icon: ICONS.save, run: () => this.save() },
+      'file.saveAs': { label: tr('app.cmd.fileSaveAs'), shortcut: 'Ctrl+Shift+S', icon: ICONS.saveAs, run: () => this.saveAs() },
+      'file.export': { label: tr('app.cmd.fileExport'), shortcut: 'Ctrl+E', icon: ICONS.download, run: () => this.exportFile(), hint: tr('app.cmd.fileExportHint') },
+      'file.playtest': { label: tr('app.cmd.playtest'), shortcut: 'F5', icon: ICONS.play, run: () => this.playtest() },
 
-      'edit.undo': { label: () => (st.canUndo ? `Undo ${st.undoLabel}` : 'Undo'), keyLabel: 'Undo', shortcut: 'Ctrl+Z', icon: ICONS.undo, enabled: () => st.canUndo, run: () => st.undo() },
-      'edit.redo': { label: () => (st.canRedo ? `Redo ${st.redoLabel}` : 'Redo'), keyLabel: 'Redo', shortcut: 'Ctrl+Y', icon: ICONS.redo, enabled: () => st.canRedo, run: () => st.redo() },
-      'edit.redo2': { label: 'Redo', shortcut: 'Ctrl+Shift+Z', run: () => st.redo(), enabled: () => st.canRedo },
-      'edit.cut': { label: 'Cut', keyLabel: 'Cut objects', shortcut: 'Ctrl+X', icon: ICONS.cut, enabled: hasObjSel, run: () => { this.clipboard = copySelection(st); this._writeSystemClipboard(this.clipboard); deleteSelection(st); } },
-      'edit.copy': { label: 'Copy', keyLabel: 'Copy objects', shortcut: 'Ctrl+C', icon: ICONS.copy, enabled: hasObjSel, run: () => { this.clipboard = copySelection(st); this._writeSystemClipboard(this.clipboard); st.notify(`Copied ${this.clipboard.length} object${this.clipboard.length === 1 ? '' : 's'}`); } },
-      'edit.paste': { label: 'Paste', keyLabel: 'Paste (at the pointer)', shortcut: 'Ctrl+V', icon: ICONS.paste, enabled: () => this.clipboard.length > 0, run: () => this.paste() },
-      'edit.duplicate': { label: 'Duplicate', shortcut: 'Ctrl+D', icon: ICONS.duplicate, enabled: hasObjSel, run: () => duplicateSelection(st) },
-      'edit.delete': { label: 'Delete', keyLabel: 'Delete selection', shortcut: 'Delete', aliases: ['Backspace'], icon: ICONS.trash, enabled: hasObjSel, run: () => deleteSelection(st) },
-      'edit.rotateCcw': { label: 'Rotate +90°', shortcut: 'Ctrl+R', icon: ICONS.rotateCcw, enabled: hasSel, run: () => rotateSelection(st, 90 * DEG) },
-      'edit.rotateCw': { label: 'Rotate −90°', shortcut: 'Ctrl+Shift+R', icon: ICONS.rotate, enabled: hasSel, run: () => rotateSelection(st, -90 * DEG) },
-      'edit.selectAll': { label: 'Select all objects', shortcut: 'Ctrl+A', icon: ICONS.selectAll, run: () => this.selectAll() },
-      'edit.deselect': { label: 'Deselect', keyLabel: 'Deselect / cancel', shortcut: 'Escape', enabled: hasSel, run: () => st.clearSelection() },
+      'edit.undo': { label: () => (st.canUndo ? tr('app.cmd.undoWhat', { what: st.undoLabel }) : tr('app.cmd.undo')), keyLabel: tr('app.cmd.undo'), shortcut: 'Ctrl+Z', icon: ICONS.undo, enabled: () => st.canUndo, run: () => st.undo() },
+      'edit.redo': { label: () => (st.canRedo ? tr('app.cmd.redoWhat', { what: st.redoLabel }) : tr('app.cmd.redo')), keyLabel: tr('app.cmd.redo'), shortcut: 'Ctrl+Y', icon: ICONS.redo, enabled: () => st.canRedo, run: () => st.redo() },
+      'edit.redo2': { label: tr('app.cmd.redo'), shortcut: 'Ctrl+Shift+Z', run: () => st.redo(), enabled: () => st.canRedo },
+      'edit.cut': { label: tr('app.cmd.cut'), keyLabel: tr('app.cmd.cutKey'), shortcut: 'Ctrl+X', icon: ICONS.cut, enabled: hasObjSel, run: () => { this.clipboard = copySelection(st); this._writeSystemClipboard(this.clipboard); deleteSelection(st); } },
+      'edit.copy': { label: tr('app.cmd.copy'), keyLabel: tr('app.cmd.copyKey'), shortcut: 'Ctrl+C', icon: ICONS.copy, enabled: hasObjSel, run: () => { this.clipboard = copySelection(st); this._writeSystemClipboard(this.clipboard); st.notify(trn('app.clip.copied', this.clipboard.length)); } },
+      'edit.paste': { label: tr('app.cmd.paste'), keyLabel: tr('app.cmd.pasteKey'), shortcut: 'Ctrl+V', icon: ICONS.paste, enabled: () => this.clipboard.length > 0, run: () => this.paste() },
+      'edit.duplicate': { label: tr('app.cmd.duplicate'), shortcut: 'Ctrl+D', icon: ICONS.duplicate, enabled: hasObjSel, run: () => duplicateSelection(st) },
+      'edit.delete': { label: tr('common.delete'), keyLabel: tr('app.cmd.deleteKey'), shortcut: 'Delete', aliases: ['Backspace'], icon: ICONS.trash, enabled: hasObjSel, run: () => deleteSelection(st) },
+      'edit.rotateCcw': { label: tr('app.cmd.rotateCcw'), shortcut: 'Ctrl+R', icon: ICONS.rotateCcw, enabled: hasSel, run: () => rotateSelection(st, 90 * DEG) },
+      'edit.rotateCw': { label: tr('app.cmd.rotateCw'), shortcut: 'Ctrl+Shift+R', icon: ICONS.rotate, enabled: hasSel, run: () => rotateSelection(st, -90 * DEG) },
+      'edit.selectAll': { label: tr('app.cmd.selectAll'), shortcut: 'Ctrl+A', icon: ICONS.selectAll, run: () => this.selectAll() },
+      'edit.deselect': { label: tr('app.cmd.deselect'), keyLabel: tr('app.cmd.deselectKey'), shortcut: 'Escape', enabled: hasSel, run: () => st.clearSelection() },
       'edit.findTextKey': {
-        label: 'Find by text key…', icon: ICONS.search, run: () => findTextKeyDialog(this),
-        hint: 'Select the text that holds a text key (a GUID from a translation table or a review note, or a script line’s #line: tag)',
+        label: tr('app.cmd.findTextKey'), icon: ICONS.search, run: () => findTextKeyDialog(this),
+        hint: tr('app.cmd.findTextKeyHint'),
       },
 
-      'view.split': { label: '3D + 2D map', keyLabel: 'Layout: 3D + 2D map', shortcut: '1', icon: ICONS.layoutSplit, checked: () => v().layout === 'split', run: () => st.setView({ layout: 'split' }) },
-      'view.3d': { label: '3D only', keyLabel: 'Layout: 3D only', shortcut: '2', icon: ICONS.layout3d, checked: () => v().layout === '3d', run: () => st.setView({ layout: '3d' }) },
-      'view.2d': { label: '2D map only', keyLabel: 'Layout: 2D map only', shortcut: '3', icon: ICONS.layout2d, checked: () => v().layout === '2d', run: () => st.setView({ layout: '2d' }) },
-      'view.frameSelection': { label: 'Frame selection', shortcut: 'F', icon: ICONS.focus, enabled: hasSel, run: () => this.focusIds(st.selection) },
-      'view.frameLevel': { label: 'Frame level', shortcut: 'Home', icon: ICONS.frame, run: () => { this.view2d?.frameLevel(); this.view3d?.frameLevel?.(); } },
-      'view.grid': { label: 'Grid', keyLabel: 'Toggle grid', shortcut: 'Ctrl+G', checked: () => v().grid !== false, run: toggleView('grid') },
-      'view.textured2d': { label: 'Textured 2D map', checked: () => v().textured2d !== false, run: toggleView('textured2d') },
-      'view.objects': { label: 'Show objects', checked: () => v().showObjects !== false, run: toggleView('showObjects') },
-      'view.markers': { label: 'Show markers (areas, regions, start)', checked: () => v().showMarkers !== false, run: toggleView('showMarkers') },
-      'view.showAll': { label: 'Show all hidden types', enabled: () => (v().hiddenTypes?.length ?? 0) > 0, run: () => st.setView({ hiddenTypes: [] }) },
-      'view.gameCamera': { label: '3D: gameplay camera', checked: () => v().cameraMode === 'game', run: () => st.setView({ cameraMode: v().cameraMode === 'game' ? 'edit' : 'game' }) },
-      'view.postfx': { label: '3D: diorama post effects', checked: () => !!v().postfx, run: () => st.setView({ postfx: !v().postfx }) },
-      'view.atmosphere': { label: '3D: particles & god rays', checked: () => !!v().atmosphere, run: () => st.setView({ atmosphere: !v().atmosphere }) },
-      'view.storyPreview': { label: 'Story preview…', icon: ICONS.eye, checked: () => !!v().storyPreview, run: () => storyPreviewDialog(this), hint: 'Hide the objects whose story conditions (when / unless) do not hold for chosen story values' },
-      'view.brushBigger': { label: 'Bigger brush', shortcut: ']', run: () => this._brush(1) },
-      'view.brushSmaller': { label: 'Smaller brush', shortcut: '[', run: () => this._brush(-1) },
+      'view.split': { label: tr('app.cmd.viewSplit'), keyLabel: tr('app.cmd.viewSplitKey'), shortcut: '1', icon: ICONS.layoutSplit, checked: () => v().layout === 'split', run: () => st.setView({ layout: 'split' }) },
+      'view.3d': { label: tr('app.cmd.view3d'), keyLabel: tr('app.cmd.view3dKey'), shortcut: '2', icon: ICONS.layout3d, checked: () => v().layout === '3d', run: () => st.setView({ layout: '3d' }) },
+      'view.2d': { label: tr('app.cmd.view2d'), keyLabel: tr('app.cmd.view2dKey'), shortcut: '3', icon: ICONS.layout2d, checked: () => v().layout === '2d', run: () => st.setView({ layout: '2d' }) },
+      'view.frameSelection': { label: tr('app.cmd.frameSelection'), shortcut: 'F', icon: ICONS.focus, enabled: hasSel, run: () => this.focusIds(st.selection) },
+      'view.frameLevel': { label: tr('app.cmd.frameLevel'), shortcut: 'Home', icon: ICONS.frame, run: () => { this.view2d?.frameLevel(); this.view3d?.frameLevel?.(); } },
+      'view.grid': { label: tr('app.cmd.grid'), keyLabel: tr('app.cmd.gridKey'), shortcut: 'Ctrl+G', checked: () => v().grid !== false, run: toggleView('grid') },
+      'view.textured2d': { label: tr('app.cmd.textured2d'), checked: () => v().textured2d !== false, run: toggleView('textured2d') },
+      'view.objects': { label: tr('app.cmd.showObjects'), checked: () => v().showObjects !== false, run: toggleView('showObjects') },
+      'view.markers': { label: tr('app.cmd.showMarkers'), checked: () => v().showMarkers !== false, run: toggleView('showMarkers') },
+      'view.showAll': { label: tr('app.cmd.showAll'), enabled: () => (v().hiddenTypes?.length ?? 0) > 0, run: () => st.setView({ hiddenTypes: [] }) },
+      'view.gameCamera': { label: tr('app.cmd.gameCamera'), checked: () => v().cameraMode === 'game', run: () => st.setView({ cameraMode: v().cameraMode === 'game' ? 'edit' : 'game' }) },
+      'view.postfx': { label: tr('app.cmd.postfx'), checked: () => !!v().postfx, run: () => st.setView({ postfx: !v().postfx }) },
+      'view.atmosphere': { label: tr('app.cmd.atmosphere'), checked: () => !!v().atmosphere, run: () => st.setView({ atmosphere: !v().atmosphere }) },
+      'view.storyPreview': { label: tr('app.cmd.storyPreview'), icon: ICONS.eye, checked: () => !!v().storyPreview, run: () => storyPreviewDialog(this), hint: tr('app.cmd.storyPreviewHint') },
+      'view.brushBigger': { label: tr('app.cmd.brushBigger'), shortcut: ']', run: () => this._brush(1) },
+      'view.brushSmaller': { label: tr('app.cmd.brushSmaller'), shortcut: '[', run: () => this._brush(-1) },
 
-      'level.settings': { label: 'Level settings…', icon: ICONS.settings, run: () => levelSettingsDialog(this) },
-      'level.resize': { label: 'Resize level…', icon: ICONS.resize, run: () => resizeDialog(this) },
-      'level.validate': { label: 'Check for problems', icon: ICONS.validate, run: () => this.validate() },
+      'level.settings': { label: tr('app.cmd.levelSettings'), icon: ICONS.settings, run: () => levelSettingsDialog(this) },
+      'level.resize': { label: tr('app.cmd.resize'), icon: ICONS.resize, run: () => resizeDialog(this) },
+      'level.validate': { label: tr('app.cmd.validate'), icon: ICONS.validate, run: () => this.validate() },
       'level.assignTextKeys': {
-        label: 'Assign text keys', icon: ICONS.tag, run: () => this.assignTextKeys(),
-        hint: 'Give every text that has no text key one (translations name a text by its key) — one undo step',
+        label: tr('app.cmd.assignTextKeys'), icon: ICONS.tag, run: () => this.assignTextKeys(),
+        hint: tr('app.cmd.assignTextKeysHint'),
       },
-      'level.playtest': { label: 'Play-test', shortcut: 'F5', icon: ICONS.play, run: () => this.playtest() },
+      'level.playtest': { label: tr('app.cmd.playtest'), shortcut: 'F5', icon: ICONS.play, run: () => this.playtest() },
       'level.openInGame': {
-        label: 'Open saved level in the game', icon: ICONS.external, enabled: () => st.fileRef.kind === 'project',
+        label: tr('app.cmd.openInGame'), icon: ICONS.external, enabled: () => st.fileRef.kind === 'project',
         run: () => {
           const ref = st.fileRef;
-          window.open(ref.campaign ? `game.html?campaign=${encodeURIComponent(ref.campaign)}&level=${encodeURIComponent(ref.name)}` : `game.html?level=${encodeURIComponent(ref.name)}`, '_blank');
+          window.open(withLang(ref.campaign ? `game.html?campaign=${encodeURIComponent(ref.campaign)}&level=${encodeURIComponent(ref.name)}` : `game.html?level=${encodeURIComponent(ref.name)}`), '_blank');
         },
       },
 
       'lang.en': { label: langName('en'), checked: () => editorLang() === 'en', run: () => this.setLanguage('en') },
       'lang.zh': { label: langName('zh'), checked: () => editorLang() === 'zh', run: () => this.setLanguage('zh') },
 
-      'help.shortcuts': { label: 'Keyboard shortcuts', keyLabel: 'This list', shortcut: '?', icon: ICONS.keyboard, run: () => shortcutsDialog(this._shortcutGroups()) },
-      'help.game': { label: 'Open the Emberfall demo', icon: ICONS.external, run: () => window.open('game.html', '_blank') },
-      'help.launcher': { label: 'All campaigns and levels', icon: ICONS.external, run: () => window.open('index.html', '_blank') },
-      'help.about': { label: 'About the level editor', icon: ICONS.help, run: () => aboutDialog() },
+      'help.shortcuts': { label: tr('app.cmd.shortcuts'), keyLabel: tr('app.cmd.shortcutsKey'), shortcut: '?', icon: ICONS.keyboard, run: () => shortcutsDialog(this._shortcutGroups()) },
+      'help.game': { label: tr('app.cmd.demo'), icon: ICONS.external, run: () => window.open(withLang('game.html'), '_blank') },
+      'help.launcher': { label: tr('app.cmd.launcher'), icon: ICONS.external, run: () => window.open('index.html', '_blank') },
+      'help.about': { label: tr('app.cmd.about'), icon: ICONS.help, run: () => aboutDialog() },
     };
     // normalised combo → command id: each command's `shortcut` and `aliases` (Alt+N: Chrome
     // reserves Ctrl+N in normal tabs); '?' typed with Shift arrives as Shift+? (comboOf)
@@ -967,11 +990,11 @@ export class EditorApp {
 
   _menus() {
     return [
-      { id: 'file', label: 'File', items: ['file.new', 'file.open', 'file.openFile', '-', 'file.save', 'file.saveAs', 'file.export', '-', 'file.playtest'] },
-      { id: 'edit', label: 'Edit', items: ['edit.undo', 'edit.redo', '-', 'edit.cut', 'edit.copy', 'edit.paste', 'edit.duplicate', 'edit.delete', '-', 'edit.rotateCcw', 'edit.rotateCw', '-', 'edit.selectAll', 'edit.deselect', '-', 'edit.findTextKey'] },
-      { id: 'view', label: 'View', items: [{ header: 'Layout' }, 'view.split', 'view.3d', 'view.2d', '-', 'view.frameSelection', 'view.frameLevel', '-', { header: 'Show' }, 'view.grid', 'view.textured2d', 'view.objects', 'view.markers', 'view.showAll', 'view.storyPreview', '-', { header: '3D preview' }, 'view.gameCamera', 'view.postfx', 'view.atmosphere', '-', { header: tr('app.menu.language') }, ...EDITOR_LANGS.map((l) => `lang.${l}`)] },
-      { id: 'level', label: 'Level', items: ['level.settings', 'level.resize', '-', 'level.validate', 'level.assignTextKeys', 'level.playtest', 'level.openInGame'] },
-      { id: 'help', label: 'Help', items: ['help.shortcuts', 'help.game', 'help.launcher', '-', 'help.about'] },
+      { id: 'file', label: tr('app.menu.file'), items: ['file.new', 'file.open', 'file.openFile', '-', 'file.save', 'file.saveAs', 'file.export', '-', 'file.playtest'] },
+      { id: 'edit', label: tr('app.menu.edit'), items: ['edit.undo', 'edit.redo', '-', 'edit.cut', 'edit.copy', 'edit.paste', 'edit.duplicate', 'edit.delete', '-', 'edit.rotateCcw', 'edit.rotateCw', '-', 'edit.selectAll', 'edit.deselect', '-', 'edit.findTextKey'] },
+      { id: 'view', label: tr('app.menu.view'), items: [{ header: tr('app.menu.layout') }, 'view.split', 'view.3d', 'view.2d', '-', 'view.frameSelection', 'view.frameLevel', '-', { header: tr('app.menu.show') }, 'view.grid', 'view.textured2d', 'view.objects', 'view.markers', 'view.showAll', 'view.storyPreview', '-', { header: tr('app.menu.preview3d') }, 'view.gameCamera', 'view.postfx', 'view.atmosphere', '-', { header: tr('app.menu.language') }, ...EDITOR_LANGS.map((l) => `lang.${l}`)] },
+      { id: 'level', label: tr('app.menu.level'), items: ['level.settings', 'level.resize', '-', 'level.validate', 'level.assignTextKeys', 'level.playtest', 'level.openInGame'] },
+      { id: 'help', label: tr('app.menu.help'), items: ['help.shortcuts', 'help.game', 'help.launcher', '-', 'help.about'] },
     ];
   }
 
@@ -992,17 +1015,20 @@ export class EditorApp {
       if (g?.items.length) groups.push(g);
     };
     take('file');
-    groups.push({ title: 'Tools', items: TOOLS.map((t) => [t.shortcut, t.label]) });
+    groups.push({ title: tr('app.keys.tools'), items: TOOLS.map((t) => [t.shortcut, t.label]) });
     take('edit');
+    const pan = tr('app.keys.pan');
+    const zoomCursor = tr('app.keys.zoomCursor');
+    const shiftClick = tr('app.keys.shiftClick');
     groups.push(
-      { title: 'Selection & placing', items: [['R / Shift+R', 'Rotate ±15°'], ['Arrows', 'Nudge 0.5 (Shift: 2, Alt: 0.1)'], ['Alt', 'Place / move without snapping'], ['Shift+click', 'Add to selection'], ['Ctrl+click', 'Toggle selection']] },
-      { title: 'Terrain', items: [['Alt+click', 'Pick tile / level'], ['Shift+click', 'Straight line (paint)'], ['Shift', 'Invert raise / lower']] },
+      { title: tr('app.keys.selection'), items: [['R / Shift+R', tr('app.keys.rotate15')], [tr('app.keys.arrows'), tr('app.keys.nudge')], ['Alt', tr('app.keys.noSnap')], [shiftClick, tr('app.keys.addSelection')], [tr('app.keys.ctrlClick'), tr('app.keys.toggleSelection')]] },
+      { title: tr('app.keys.terrain'), items: [[tr('app.keys.altClick'), tr('app.keys.pickTile')], [shiftClick, tr('app.keys.straightLine')], ['Shift', tr('app.keys.invertHeight')]] },
     );
     take('view');
     groups.push(
-      { title: '2D map', items: [['Wheel', 'Zoom to the cursor'], ['Right-drag / Middle-drag', 'Pan'], ['Space+drag', 'Pan'], ['Double-click', 'Focus an object']] },
-      { title: '3D view', items: [['Right-drag', 'Orbit'], ['Middle-drag / Shift+right-drag', 'Pan'], ['Space+drag', 'Pan'], ['Wheel', 'Zoom to the cursor'], ['F / Double-click', 'Focus (F with nothing selected: the point under the pointer)'], ['Right button + W A S D', 'Fly'], ['Right button + Q / E', 'Turn'], ['Q / E', 'Rotate (game camera)']] },
-      { title: 'Script fields', items: [['Tab / Shift+Tab', 'Indent / outdent (at a line\'s start, or selected lines)'], ['Tab / Shift+Tab', 'Next / previous field (after a line\'s text)'], ['Enter', 'New line, same indentation'], ['Ctrl+Enter', 'Done (the script editor: Apply)'], ['Escape', 'Put the field back as it was (the script editor: close)']] },
+      { title: tr('app.keys.map2d'), items: [[tr('app.keys.wheel'), zoomCursor], [tr('app.keys.rightMiddleDrag'), pan], [tr('app.keys.spaceDrag'), pan], [tr('app.keys.doubleClick'), tr('app.keys.focusObject')]] },
+      { title: tr('app.keys.view3d'), items: [[tr('app.keys.rightDrag'), tr('app.keys.orbit')], [tr('app.keys.middleShiftRightDrag'), pan], [tr('app.keys.spaceDrag'), pan], [tr('app.keys.wheel'), zoomCursor], [tr('app.keys.fDoubleClick'), tr('app.keys.focus3d')], [tr('app.keys.rightWasd'), tr('app.keys.fly')], [tr('app.keys.rightQe'), tr('app.keys.turn')], ['Q / E', tr('app.keys.rotateGame')]] },
+      { title: tr('app.keys.script'), items: [['Tab / Shift+Tab', tr('app.keys.indent')], ['Tab / Shift+Tab', tr('app.keys.nextField')], ['Enter', tr('app.keys.newLine')], ['Ctrl+Enter', tr('app.keys.scriptDone')], ['Escape', tr('app.keys.scriptRevert')]] },
     );
     for (const id of [...reg.keys()]) take(id);
     return groups;
@@ -1067,7 +1093,7 @@ export class EditorApp {
 
   _error(e) {
     console.warn('[editor]', e);
-    alertDialog({ title: 'Something went wrong', message: String(e?.message ?? e), icon: ICONS.warning });
+    alertDialog({ title: tr('app.somethingWrong'), message: String(e?.message ?? e), icon: ICONS.warning });
   }
 
   _brush(d) {
@@ -1075,7 +1101,7 @@ export class EditorApp {
     const n = Math.max(1, Math.min(9, st.toolOptions.brushSize + d));
     st.setToolOption('brushSize', n);
     st.emit('preview');
-    st.notify(`Brush size ${n}`);
+    st.notify(tr('app.brushSize', { n }));
   }
 
   _writeSystemClipboard(objs) {
@@ -1089,7 +1115,7 @@ export class EditorApp {
     // not what View › Show objects / Show markers switched off hide, nor what the story preview hides)
     const left = hiddenOnly(st, all);
     st.select(shownOnly(st, all));
-    st.notify(`${st.selection.length} objects selected${left.length ? ` · ${leftOutMessage(st, left)}` : ''}`);
+    st.notify(`${tr('app.selectedAll', { n: st.selection.length })}${left.length ? ` · ${leftOutMessage(st, left)}` : ''}`);
   }
 
   /**
@@ -1103,7 +1129,7 @@ export class EditorApp {
   _dropHiddenFromSelection() {
     const st = this.state;
     if (!st.selection.length || !mayHide(st)) return;
-    const msg = leftOutMessage(st, hiddenOnly(st, st.selection), ['left the selection', 'left the selection']);
+    const msg = leftOutMessage(st, hiddenOnly(st, st.selection), 'leftSelection');
     if (!st.refreshSelection().length || !msg) return;
     // (a save under another name shows it with its own message: _fileRefChanged)
     if (this._holdDropMsg) this._heldDropMsg = msg;
@@ -1134,11 +1160,12 @@ export class EditorApp {
     const patch = revealPatch(st, ids);
     if (patch) st.setView(patch);
     st.select(ids);
-    const what = [
-      patch?.storyPreview === false ? 'story preview off' : '', patch?.hiddenTypes ? 'type shown again' : '',
-      patch?.showObjects ? 'Show objects on' : '', patch?.showMarkers ? 'Show markers on' : '',
-    ].filter(Boolean).join(', ');
-    if (what) st.notify(`${what.charAt(0).toUpperCase()}${what.slice(1)} — ${ids.length === 1 ? ids[0] : `${ids.length} objects`} selected`);
+    const what = commaList([
+      patch?.storyPreview === false ? tr('app.reveal.storyOff') : '', patch?.hiddenTypes ? tr('app.reveal.typeShown') : '',
+      patch?.showObjects ? tr('app.reveal.objectsOn') : '', patch?.showMarkers ? tr('app.reveal.markersOn') : '',
+    ].filter(Boolean));
+    // (English capitalises the first part: the entry is a function)
+    if (what) st.notify(tr('app.reveal.done', { what, who: ids.length === 1 ? ids[0] : tr('app.reveal.objects', { n: ids.length }) }));
     this.focusIds(st.selection);
   }
 
@@ -1168,32 +1195,32 @@ export class EditorApp {
     if (id) {
       if (!st.selection.includes(id)) st.select([id]);
       const o = id === 'spawn' ? null : st.getObject(id);
-      items.push({ header: o ? `${OBJECT_TYPES[o.type].label} · ${o.name || o.id}` : 'Player start' });
-      items.push({ label: 'Focus', icon: ICONS.focus, shortcut: 'F', run: () => this.focusIds(st.selection) });
+      items.push({ header: o ? `${OBJECT_TYPES[o.type].label} · ${o.name || o.id}` : tr('app.ctx.playerStart') });
+      items.push({ label: tr('app.ctx.focus'), icon: ICONS.focus, shortcut: 'F', run: () => this.focusIds(st.selection) });
       if (o) {
-        items.push({ label: 'Duplicate', icon: ICONS.duplicate, shortcut: 'Ctrl+D', run: () => duplicateSelection(st) });
-        items.push({ label: 'Copy', icon: ICONS.copy, shortcut: 'Ctrl+C', run: () => this.run('edit.copy') });
-        items.push({ label: 'Rotate +90°', icon: ICONS.rotateCcw, shortcut: 'Ctrl+R', run: () => rotateSelection(st, 90 * DEG) });
-        items.push({ label: 'Pick this type', icon: ICONS.eyedropper, run: () => { st.setToolOption('objectType', o.type); st.setTool('place'); } });
+        items.push({ label: tr('app.cmd.duplicate'), icon: ICONS.duplicate, shortcut: 'Ctrl+D', run: () => duplicateSelection(st) });
+        items.push({ label: tr('app.cmd.copy'), icon: ICONS.copy, shortcut: 'Ctrl+C', run: () => this.run('edit.copy') });
+        items.push({ label: tr('app.cmd.rotateCcw'), icon: ICONS.rotateCcw, shortcut: 'Ctrl+R', run: () => rotateSelection(st, 90 * DEG) });
+        items.push({ label: tr('app.ctx.pickType'), icon: ICONS.eyedropper, run: () => { st.setToolOption('objectType', o.type); st.setTool('place'); } });
         items.push('-');
-        items.push({ label: 'Delete', icon: ICONS.trash, shortcut: 'Delete', danger: true, run: () => deleteSelection(st) });
+        items.push({ label: tr('common.delete'), icon: ICONS.trash, shortcut: 'Delete', danger: true, run: () => deleteSelection(st) });
       }
     } else {
-      items.push({ header: `Tile ${ev.i}, ${ev.j}` });
-      items.push({ label: 'Paste here', icon: ICONS.paste, shortcut: 'Ctrl+V', disabled: !this.clipboard.length, run: () => { const added = pasteObjects(st, this.clipboard, { x: ev.x, z: ev.z }); st.notify(this._pastedMessage(added)); } });
-      items.push({ label: 'Place player start here', icon: ICONS.spawn, disabled: !st.inBounds(ev.i, ev.j), run: () => st.setSpawn(ev.i + 0.5, ev.j + 0.5) });
+      items.push({ header: tr('app.ctx.tile', { i: ev.i, j: ev.j }) });
+      items.push({ label: tr('app.ctx.pasteHere'), icon: ICONS.paste, shortcut: 'Ctrl+V', disabled: !this.clipboard.length, run: () => { const added = pasteObjects(st, this.clipboard, { x: ev.x, z: ev.z }); st.notify(this._pastedMessage(added)); } });
+      items.push({ label: tr('app.ctx.spawnHere'), icon: ICONS.spawn, disabled: !st.inBounds(ev.i, ev.j), run: () => st.setSpawn(ev.i + 0.5, ev.j + 0.5) });
       const def = ownValue(OBJECT_TYPES, st.toolOptions.objectType);
       items.push({
-        label: `Place ${def?.label ?? 'object'} here`, icon: ICONS.place, disabled: def?.placement !== 'point',
+        label: tr('app.ctx.placeHere', { what: def?.label ?? tr('app.ctx.object') }), icon: ICONS.place, disabled: def?.placement !== 'point',
         // (an object the views hide — its type's eye, Show objects / markers off — is placed, not
         // selected, and the Place tool's message says why)
         run: () => {
           const obj = st.addObject(st.toolOptions.objectType, Math.round(ev.x * 2) / 2, Math.round(ev.z * 2) / 2);
-          notifyPlaced(st, `Placed ${def.label} (${obj.id})`, obj.id);
+          notifyPlaced(st, tr('app.ctx.placed', { what: def.label, id: obj.id }), obj.id);
         },
       });
       items.push('-');
-      items.push({ label: 'Frame level', icon: ICONS.frame, shortcut: 'Home', run: () => this.run('view.frameLevel') });
+      items.push({ label: tr('app.cmd.frameLevel'), icon: ICONS.frame, shortcut: 'Home', run: () => this.run('view.frameLevel') });
     }
     showContextMenu(clientX, clientY, items);
   }
@@ -1205,14 +1232,27 @@ export class EditorApp {
   /**
    * Ask what to do with unsaved changes. Resolves true when it is OK to continue (saved or
    * discarded), false to cancel.
+   * @param {'continue'|'openRecovered'|'switchLanguage'|'newLevel'|'open'} [action] what the user
+   *   is about to do (the question names it)
    */
   async confirmDiscard(action = 'continue') {
     if (!this.state.dirty) return true;
-    const name = this.state.level.name || 'Untitled';
+    const name = this.state.level.name || tr('common.untitled');
+    const actions = {
+      continue: () => tr('app.discard.action.continue'),
+      openRecovered: () => tr('app.discard.action.openRecovered'),
+      switchLanguage: () => tr('app.discard.action.switchLanguage'),
+      newLevel: () => tr('app.discard.action.newLevel'),
+      open: () => tr('app.discard.action.open'),
+    };
     const r = await confirmDialog({
-      title: 'Unsaved changes', icon: ICONS.warning, width: 470,
-      message: `“${name}” has unsaved changes. Save them before you ${action}?`,
-      buttons: [{ label: 'Don\'t save', value: 'discard', danger: true, left: true }, { label: 'Cancel', value: null }, { label: 'Save', value: 'save', primary: true }],
+      title: tr('app.doc.unsaved'), icon: ICONS.warning, width: 470,
+      message: tr('app.discard.message', { name, action: (actions[action] ?? actions.continue)() }),
+      buttons: [
+        { key: 'Don\'t save', label: tr('app.discard.dontSave'), value: 'discard', danger: true, left: true },
+        { key: 'Cancel', label: tr('common.cancel'), value: null },
+        { key: 'Save', label: tr('common.save'), value: 'save', primary: true },
+      ],
     });
     // "Don't save": the autosave is dropped once another level actually replaced this one
     // (_replaceDoc) — if opening fails or is cancelled, the work is still here and autosaved
@@ -1228,23 +1268,24 @@ export class EditorApp {
    */
   async setLanguage(lang) {
     if (lang === editorLang()) return;
-    if (!(await this.confirmDiscard('switch the language'))) return;
+    if (!(await this.confirmDiscard('switchLanguage'))) return;
     this._leaving = true;
     switchLanguage(lang);
   }
 
   async newLevel() {
-    if (!(await this.confirmDiscard('start a new level'))) return;
+    if (!(await this.confirmDiscard('newLevel'))) return;
     const opts = await newLevelDialog(this);
     if (!opts) return;
     const room = opts.kind === 'room';
     this._replaceDoc(room ? createRoomLevel(opts) : createEmptyLevel(opts), { kind: 'new', name: '' });
     this.state.setTool('paint');
-    this.state.notify(`New ${room ? 'room' : 'level'} “${opts.name}” (${opts.width} × ${opts.depth})`);
+    const vars = { name: opts.name, width: opts.width, depth: opts.depth };
+    this.state.notify(room ? tr('app.new.room', vars) : tr('app.new.level', vars));
   }
 
   async openDialog() {
-    if (!(await this.confirmDiscard('open another level'))) return;
+    if (!(await this.confirmDiscard('open'))) return;
     const choice = await openLevelDialog(this);
     if (!choice) return;
     if (choice.kind === 'project') await this.openProject(choice.name, { confirm: false, campaign: choice.campaign ?? '' });
@@ -1270,16 +1311,16 @@ export class EditorApp {
   openLocal(slot, { confirm = true } = {}) {
     return this._openParsed(() => {
       const r = loadLocalLevel(slot);
-      if (!r) throw new Error(`No level “${slot}” in this browser`);
+      if (!r) throw new Error(tr('app.open.noLocal', { slot }));
       return r;
-    }, { kind: 'local', name: slot }, `browser slot “${slot}”`, { confirm });
+    }, { kind: 'local', name: slot }, fileDisplay({ kind: 'local', name: slot }), { confirm });
   }
 
   async openFromDisk({ confirm = true } = {}) {
     let r;
-    try { r = await openLevelFileDialog(); } catch (e) { alertDialog({ title: 'Could not open the level', message: String(e?.message ?? e), icon: ICONS.warning }); return false; }
+    try { r = await openLevelFileDialog(); } catch (e) { alertDialog({ title: tr('app.open.failed'), message: String(e?.message ?? e), icon: ICONS.warning }); return false; }
     if (!r) return false;
-    return this._openParsed(() => r, { kind: 'file', name: r.fileName ?? 'level.json' }, r.fileName ?? 'file', { confirm });
+    return this._openParsed(() => r, { kind: 'file', name: r.fileName ?? 'level.json' }, r.fileName ?? tr('app.file.someFile'), { confirm });
   }
 
   async openFile(file) {
@@ -1296,18 +1337,18 @@ export class EditorApp {
     try {
       r = await loader();
     } catch (e) {
-      alertDialog({ title: 'Could not open the level', message: `${label}: ${e?.message ?? e}`, icon: ICONS.warning });
+      alertDialog({ title: tr('app.open.failed'), message: tr('app.open.failedMessage', { label, message: e?.message ?? e }), icon: ICONS.warning });
       return false;
     }
-    if (confirm && !(await this.confirmDiscard('open another level'))) return false;
-    await this._withLoading(`Opening “${r.level.name}”…`, () => this._replaceDoc(r.level, fileRef, { unsaved }), r.level);
-    // a file written by a newer engine: overwriting it (as version 1) asks first
-    this._newerFile = (r.warnings ?? []).some((w) => /newer than this engine/.test(w)) ? { ...fileRef } : null;
+    if (confirm && !(await this.confirmDiscard('open'))) return false;
+    await this._withLoading(tr('app.open.opening', { name: r.level.name }), () => this._replaceDoc(r.level, fileRef, { unsaved }), r.level);
+    // a file written by a newer engine (`parseLevel`'s `newer`): overwriting it (as version 1) asks first
+    this._newerFile = r.newer === true ? { ...fileRef } : null;
     if (r.warnings?.length) {
       const uniq = [...new Set(r.warnings)];
-      alertDialog({ title: 'Opened with warnings', message: `“${r.level.name}” was loaded, but some data was adjusted:`, lines: uniq.slice(0, 12).concat(uniq.length > 12 ? [`…and ${uniq.length - 12} more`] : []), icon: ICONS.warning });
+      alertDialog({ title: tr('app.open.warnings'), message: tr('app.open.warningsMessage', { name: r.level.name }), lines: uniq.slice(0, 12).concat(uniq.length > 12 ? [tr('app.open.more', { n: uniq.length - 12 })] : []), icon: ICONS.warning });
     } else {
-      this.state.notify(`Opened “${r.level.name}” from ${label}`);
+      this.state.notify(tr('app.open.done', { name: r.level.name, from: label }));
     }
     return true;
   }
@@ -1317,7 +1358,7 @@ export class EditorApp {
     const ref = this.state.fileRef;
     if (ref.kind === 'project') {
       if (this.projectApi) return this._saveTo('project', ref.name, { campaign: ref.campaign });
-      this.state.notify('The project folder is unavailable (dev server not running) — choose another destination');
+      this.state.notify(tr('app.save.noProject'));
       return this.saveAs();
     }
     if (ref.kind === 'local') return this._saveTo('local', ref.name);
@@ -1329,7 +1370,7 @@ export class EditorApp {
     const r = await saveAsDialog(this, { askName: DEFAULT_NAMES.has(this.state.level.name.trim()) });
     if (!r) return false;
     // a level still called "Untitled": the Save As dialog asked for its display name too
-    if (r.levelName && r.levelName !== this.state.level.name) this.state.setLevelProps({ name: r.levelName }, 'Name level');
+    if (r.levelName && r.levelName !== this.state.level.name) this.state.setLevelProps({ name: r.levelName }, tr('app.undo.nameLevel'));
     const ref = this.state.fileRef;
     const campaign = r.dest === 'project' ? r.campaign ?? '' : '';
     const same = ref.kind === r.dest && ref.name === r.name && (ref.campaign ?? '') === campaign;
@@ -1340,8 +1381,11 @@ export class EditorApp {
         else if (r.dest === 'local') exists = listLocalLevels().some((l) => l.slot === r.name);
       } catch { exists = false; }
       if (exists) {
-        const where = r.dest === 'project' ? projectFile(projectRef(r.name, campaign)) : `browser slot “${r.name}”`;
-        const ok = await confirmDialog({ title: 'Replace existing level?', message: `${where} already exists. Replace it with this level?`, danger: true, buttons: [{ label: 'Cancel', value: false }, { label: 'Replace', value: true, danger: true }] });
+        const where = fileDisplay(r.dest === 'project' ? projectRef(r.name, campaign) : { kind: 'local', name: r.name });
+        const ok = await confirmDialog({
+          title: tr('app.save.replaceTitle'), message: tr('app.save.replaceMessage', { where }), danger: true,
+          buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: false }, { key: 'Replace', label: tr('app.save.replace'), value: true, danger: true }],
+        });
         if (!ok) return false;
       }
     }
@@ -1358,9 +1402,9 @@ export class EditorApp {
     const nf = this._newerFile;
     if (nf && ((dest === 'project' && nf.kind === 'project') || (dest === 'local' && nf.kind === 'local')) && slugify(name) === slugify(nf.name)) {
       const ok = await confirmDialog({
-        title: 'Overwrite a newer level file?', icon: ICONS.warning, danger: true, width: 480,
-        message: 'This file was written by a newer version of the engine. Saving writes it as version 1: data this editor does not know may be lost. Save anyway?',
-        buttons: [{ label: 'Cancel', value: false }, { label: 'Save as version 1', value: true, danger: true }],
+        title: tr('app.save.newerTitle'), icon: ICONS.warning, danger: true, width: 480,
+        message: tr('app.save.newerMessage'),
+        buttons: [{ key: 'Cancel', label: tr('common.cancel'), value: false }, { key: 'Save as version 1', label: tr('app.save.asVersion1'), value: true, danger: true }],
       });
       if (!ok) return false;
       this._newerFile = null;
@@ -1375,11 +1419,11 @@ export class EditorApp {
       if (dest === 'project') {
         const file = await saveProjectLevel(name, level, { campaign });
         st.markSaved(projectRef(name, campaign), rev);
-        saved(st.dirty ? `Saved to public/${file} — newer edits are not saved yet` : `Saved to public/${file}`);
+        saved(st.dirty ? tr('app.save.projectNewer', { file }) : tr('app.save.project', { file }));
       } else if (dest === 'local') {
         const slot = saveLocalLevel(name, level);
         st.markSaved({ kind: 'local', name: slot }, rev);
-        saved(`Saved in this browser (slot “${slot}”)`);
+        saved(tr('app.save.local', { slot }));
       } else {
         // a download cannot be confirmed (blocked, or cancelled in a "Save as" prompt of the
         // browser): the level counts as saved to that file, but a recovery copy stays in this
@@ -1388,7 +1432,7 @@ export class EditorApp {
         downloadLevel(level, fileName);
         writeAutosave(level, { kind: 'file', name: fileName }, { exported: true });
         st.markSaved({ kind: 'file', name: fileName }, rev);
-        saved(`Downloaded ${fileName} — check your downloads folder (a recovery copy stays in this browser)`);
+        saved(tr('app.save.download', { file: fileName }));
         this._autosavedAt = this._changeCount;
         this._updateDoc();
         return true;
@@ -1400,7 +1444,7 @@ export class EditorApp {
       this._updateDoc();
       return true;
     } catch (e) {
-      alertDialog({ title: 'Saving failed', message: String(e?.message ?? e), icon: ICONS.warning });
+      alertDialog({ title: tr('app.save.failed'), message: String(e?.message ?? e), icon: ICONS.warning });
       return false;
     }
   }
@@ -1410,7 +1454,7 @@ export class EditorApp {
     const level = this.state.snapshot();
     const fileName = `${slugify(level.name)}.level.json`;
     downloadLevel(level, fileName);
-    this.state.notify(`Downloaded ${fileName}`);
+    this.state.notify(tr('app.export.done', { file: fileName }));
   }
 
   /**
@@ -1461,6 +1505,7 @@ export class EditorApp {
     }
     // (another document since, or saved back over that file meanwhile: nothing to remember)
     if (!r || st.loads !== loads || fileLabel(st.fileRef) === fileLabel(from)) return;
+    this._copiedNames.set(fileLabel(from), fileDisplay(from));
     st.addCopiedTexts(fileLabel(from), textMapOf(levelTexts(r.level)));
   }
 
@@ -1513,9 +1558,9 @@ export class EditorApp {
     // (another level opened meanwhile: the sources were the other one's)
     const r = st.assignTextKeys(undefined, { sources: st.loads === loads ? sources : [] });
     const parts = [];
-    if (r.objects) parts.push(`${r.objects} object${r.objects === 1 ? '' : 's'}`);
-    if (r.root) parts.push('the level\'s own texts');
-    st.notify(parts.length ? `Text keys assigned: ${parts.join(' and ')}` : 'Every text already has its own text key');
+    if (r.objects) parts.push(trn('app.textKeys.objects', r.objects));
+    if (r.root) parts.push(tr('app.textKeys.levelTexts'));
+    st.notify(parts.length ? tr('app.textKeys.assigned', { what: andList(parts) }) : tr('app.textKeys.none'));
     return r;
   }
 
@@ -1560,15 +1605,18 @@ export class EditorApp {
     const key = parseKeyInput(input);
     const typed = typeof input === 'string' ? input.trim() : '';
     if (!key) {
-      return { found: false, key: '', more: 0, message: typed ? `“${typed.length > 48 ? `${typed.slice(0, 47)}…` : typed}” is not a text key: a text key is 32 hex digits (a script line’s tag is #line: and the key).` : 'Type or paste a text key.' };
+      return { found: false, key: '', more: 0, message: typed ? tr('app.findKey.notKey', { typed: typed.length > 48 ? `${typed.slice(0, 47)}…` : typed }) : tr('app.findKey.empty') };
     }
     const { objects, root } = findTextKey(st.level, key);
     const more = objects.length + root.length - 1;
     if (objects.length) return { found: true, key, id: objects[0].id, row: objects[0].row, more, message: '' };
     if (root.length) return { found: true, key, root: root[0].field, more, message: '' };
     const other = st.sharedTexts(key);
-    const where = other?.length ? ` ${other.slice(0, 2).map((t) => `${t.file} has it (${t.where})`).join('; ')}${other.length > 2 ? ` and ${other.length - 2} more` : ''}.` : '';
-    return { found: false, key, more: 0, message: `No text of this level has the text key ${key}.${where}` };
+    const where = other?.length ? tr('app.findKey.others', {
+      list: other.slice(0, 2).map((t) => tr('app.findKey.hasIt', { file: this._copiedNames.get(t.file) ?? t.file, where: t.where })).join(tr('app.findKey.listSep')),
+      more: other.length > 2 ? tr('app.findKey.more', { n: other.length - 2 }) : '',
+    }) : '';
+    return { found: false, key, more: 0, message: tr('app.findKey.notFound', { key, where }) };
   }
 
   /**
@@ -1581,17 +1629,18 @@ export class EditorApp {
   showTextKey(hit) {
     const st = this.state;
     if (!hit.found) { st.notify(hit.message); return; }
-    const also = hit.more > 0 ? ` — and ${hit.more} more text${hit.more === 1 ? '' : 's'} (a key on two texts: Check for problems)` : '';
+    const also = hit.more > 0 ? trn('app.findKey.also', hit.more) : '';
     if (hit.root) {
       st.clearSelection();
-      st.notify(`Text key ${hit.key}: the level’s ${hit.root === 'subtitle' ? 'subtitle (Level settings › General)' : `title-screen text environment.${hit.root}`}${also}`);
+      st.notify(hit.root === 'subtitle' ? tr('app.findKey.rootSubtitle', { key: hit.key, also }) : tr('app.findKey.rootTitle', { key: hit.key, field: hit.root, also }));
       return;
     }
     const row = /** @type {TextRow} */ (hit.row);
     this.reveal([/** @type {string} */ (hit.id)]);
     const shown = this.inspector?.showTextKey(row);
-    const place = row.line != null ? `, line ${row.line}` : row.page != null ? `, page ${row.page + 1}${row.choice != null ? ` › choice ${row.choice + 1}` : ''}` : '';
-    st.notify(`Text key ${hit.key}: ${hit.id} › ${row.field}${place}${shown ? '' : ' (selected)'}${also}`);
+    const place = row.line != null ? tr('app.findKey.line', { n: row.line })
+      : row.page != null ? `${tr('app.findKey.page', { n: row.page + 1 })}${row.choice != null ? tr('app.findKey.choice', { n: row.choice + 1 }) : ''}` : '';
+    st.notify(tr('app.findKey.object', { key: hit.key, id: hit.id, field: row.field, place, selected: shown ? '' : tr('app.findKey.selected'), also }));
   }
 
   /**
@@ -1610,10 +1659,10 @@ export class EditorApp {
     const campaign = this._campaign();
     // (at most a few seconds: the checks run without the story files when they do not come)
     if (campaign) await Promise.race([campaignStoryContext(campaign, { refresh: true }), new Promise((r) => setTimeout(r, 4000))]);
-    const errors = validateLevel(this.state.level).map(friendlyProblem);
+    const errors = validateLevelIssues(this.state.level).map((issue) => friendlyProblem(issue));
     const warnings = this._softWarnings();
-    if (!errors.length && !warnings.length) { alertDialog({ title: 'No problems found', message: 'The level is ready to play-test.', icon: ICONS.check }); return; }
-    alertDialog({ title: errors.length ? 'Problems found' : 'Level check', message: errors.length ? 'These must be fixed before play-testing:' : 'The level is playable. Some things to consider:', lines: [...errors, ...warnings], icon: errors.length ? ICONS.warning : ICONS.info });
+    if (!errors.length && !warnings.length) { alertDialog({ title: tr('app.check.none'), message: tr('app.check.ready'), icon: ICONS.check }); return; }
+    alertDialog({ title: errors.length ? tr('app.check.problems') : tr('app.check.title'), message: errors.length ? tr('app.check.mustFix') : tr('app.check.consider'), lines: [...errors, ...warnings], icon: errors.length ? ICONS.warning : ICONS.info });
   }
 
   _softWarnings() {
@@ -1626,16 +1675,15 @@ export class EditorApp {
       const p = OBJECT_TYPES[o.type].placement === 'point' ? o : null;
       return p && (p.x < 0 || p.z < 0 || p.x > L.width || p.z > L.depth);
     }).length;
-    if (outside) out.push(`${outside} object${outside === 1 ? ' is' : 's are'} outside the map.`);
+    if (outside) out.push(trn('app.check.outside', outside));
     // (a room — a storeroom, a cellar — is often empty: no nudge there)
-    if (!isRoom(L.environment) && !L.objects.some((o) => o.type === 'npc')) out.push('There are no villagers to talk to yet.');
+    if (!isRoom(L.environment) && !L.objects.some((o) => o.type === 'npc')) out.push(tr('app.check.noVillagers'));
     const silent = L.objects.filter((o) => o.type === 'house' && !(Array.isArray(o.text) && o.text.some((t) => String(t).trim()))).length;
-    if (silent) out.push(`${silent} house${silent === 1 ? ' has' : 's have'} no “Text when knocking”: ${silent === 1 ? 'its door is' : 'their doors are'} not interactive.`);
+    if (silent) out.push(trn('app.check.silentHouses', silent));
     const edges = walkableEdges(L);
     if (edges.length) {
-      out.push(isRoom(L.environment)
-        ? `Walkable ground reaches the map edge (${edges.join('; ')}): the player can walk out of the room there. A room's door leads out through an exit over it (Place › Markers › Exit); else block it with rock (x) tiles.`
-        : `Walkable ground reaches the map edge (${edges.join('; ')}): the player can walk to the edge of the world there. Block it with forest (T) or rock (x) tiles if that is not intended.`);
+      const list = edges.join(tr('app.check.edgeSep'));
+      out.push(isRoom(L.environment) ? tr('app.check.edgeRoom', { edges: list }) : tr('app.check.edgeLevel', { edges: list }));
     }
     out.push(...combatIssues(L, (flier) => this.view3d?.enemyStartTest?.(flier) ?? null));
     // campaign exits and entrances (docs/specs/CAMPAIGN_FORMAT.md)
@@ -1645,7 +1693,8 @@ export class EditorApp {
     // `done:` keys against every level's events and `once` keys, as the campaign check reads them)
     const issues = storyIssues(L, storyCheckContext(this.state));
     for (const i of [...issues.filter((x) => x.severity === 'error'), ...issues.filter((x) => x.severity !== 'error')]) {
-      out.push(`Story${i.severity === 'error' ? ' error' : ''}: ${formatStoryIssue(i, L)}`);
+      const text = formatStoryIssue(i, L);
+      out.push(i.severity === 'error' ? tr('app.check.storyError', { text }) : tr('app.check.story', { text }));
     }
     // the content-text keys (docs/specs/I18N.md §4.10): texts without one, keys on no text, a key
     // on two texts (of two Englishes: `npm run i18n:keys -- --fix` on the file or campaign)
@@ -1659,11 +1708,11 @@ export class EditorApp {
   playtest() {
     const st = this.state;
     const level = st.snapshot();
-    const raw = validateLevel(level);
-    if (raw.length) {
-      const spawnIssue = raw.some((e) => /spawn/.test(e));
-      const errors = raw.map(friendlyProblem);
-      problemsDialog('Cannot play-test yet', errors, {
+    const issues = validateLevelIssues(level);
+    if (issues.length) {
+      const spawnIssue = issues.some((e) => e.code.startsWith('spawn.'));
+      const errors = issues.map((issue) => friendlyProblem(issue));
+      problemsDialog(tr('app.play.cannot'), errors, {
         fixSpawn: spawnIssue ? () => { st.select(['spawn']); st.setTool('spawn'); this.focusIds(['spawn']); } : null,
       });
       return false;
@@ -1671,7 +1720,7 @@ export class EditorApp {
     try {
       saveLocalLevel(PLAYTEST_SLOT, level);
     } catch (e) {
-      alertDialog({ title: 'Could not start the play-test', message: `Browser storage is unavailable or full: ${e?.message ?? e}`, icon: ICONS.warning });
+      alertDialog({ title: tr('app.play.failed'), message: tr('app.play.storage', { message: e?.message ?? e }), icon: ICONS.warning });
       return false;
     }
     // a campaign's level plays inside its campaign: its exits lead to the campaign's other levels;
@@ -1682,9 +1731,9 @@ export class EditorApp {
       ? `game.html?campaign=${encodeURIComponent(ref.campaign)}&level=local:${PLAYTEST_SLOT}&as=${encodeURIComponent(ref.name)}&autostart=1`
       : `game.html?level=local:${PLAYTEST_SLOT}&autostart=1${st.origin ? `&i18n=${st.origin.split('/').map(encodeURIComponent).join('/')}` : ''}`;
     // the game plays in the editor's language (a `?lang=` on the editor is not saved, so pass it)
-    const w = window.open(getLang() === 'en' ? url : `${url}&lang=${getLang()}`, 'luminati-playtest');
-    if (!w) st.notify('Pop-up blocked — allow pop-ups for this page to play-test (the level is saved in the play-test slot).');
-    else st.notify(`Play-testing “${level.name}” in a new tab`);
+    const w = window.open(withLang(url), 'luminati-playtest');
+    if (!w) st.notify(tr('app.play.popupBlocked'));
+    else st.notify(tr('app.play.started', { name: level.name }));
     return true;
   }
 
@@ -1746,7 +1795,7 @@ function bridgeStepIssues(L, o) {
     if (!d || d.void || d.water || d.stairs || d.walkable === false) return null;
     return { y: getHeightLevel(L, i, j) * 0.5, x, z };
   };
-  /** @type {[end: string, bank: { y: number, x: number, z: number }|null][]} */
+  /** @type {['start'|'end', { y: number, x: number, z: number }|null][]} */
   const ends = [['start', bank(o.x0 - ux * 0.5, o.z0 - uz * 0.5)], ['end', bank(o.x1 + ux * 0.5, o.z1 + uz * 0.5)]];
   const deck = Number.isFinite(o.deckY) ? o.deckY : (ends[0][1] ?? ends[1][1])?.y;
   if (deck == null) return [];
@@ -1758,14 +1807,18 @@ function bridgeStepIssues(L, o) {
     if (!b) continue;
     const step = first - b.y;
     if (Math.abs(step) <= 0.55) continue;
-    out.push(`Bridge “${o.id}”: its ${which} is ${Math.abs(step).toFixed(2)} ${step > 0 ? 'above' : 'below'} the bank at (${b.x.toFixed(1)}, ${b.z.toFixed(1)}) — more than a step (0.55), so the player cannot get on or off there. Level the bank with the deck, set the deck height or flatten the arch.`);
+    const vars = {
+      id: o.id, end: which === 'start' ? tr('app.check.bridge.start') : tr('app.check.bridge.end'),
+      d: Math.abs(step).toFixed(2), x: b.x.toFixed(1), z: b.z.toFixed(1),
+    };
+    out.push(step > 0 ? tr('app.check.bridge.above', vars) : tr('app.check.bridge.below', vars));
   }
   return out;
 }
 
 /** Up to 4 ids, then "+n more". */
 function idList(ids) {
-  return ids.length > 4 ? `${ids.slice(0, 4).join(', ')} +${ids.length - 4} more` : ids.join(', ');
+  return ids.length > 4 ? tr('app.check.idsMore', { ids: commaList(ids.slice(0, 4)), n: ids.length - 4 }) : commaList(ids);
 }
 
 /**
@@ -1786,9 +1839,9 @@ function combatIssues(L, exactTest = null) {
   const enemies = L.objects.filter((o) => o.type === 'enemy');
   const combat = levelHasCombat(L);
   if (L.environment?.combat === false && enemies.length) {
-    out.push(`Combat is off (Level settings) but ${enemies.length} enemy group${enemies.length === 1 ? ' is' : 's are'} placed: ${enemies.length === 1 ? 'it does' : 'they do'} not appear in the game.`);
+    out.push(trn('app.check.combatOff', enemies.length));
   }
-  if (combat && !L.objects.some((o) => o.type === 'waystone')) out.push('This is a combat level without a Waystone: a defeated player restarts at the player start. Place a Waystone (checkpoint) along the way.');
+  if (combat && !L.objects.some((o) => o.type === 'waystone')) out.push(tr('app.check.noWaystone'));
   if (!enemies.length) return out;
   const cols = dataColliders(L);
   const tests = new Map();
@@ -1810,27 +1863,27 @@ function combatIssues(L, exactTest = null) {
     if (info.boss) bosses.push(o);
     else if (strayArena(o)) stray.push(o.id);
   }
-  if (offGround.length) out.push(`Some enemies would start off walkable ground (${idList(offGround)}): move the group or shrink its home radius.`);
-  if (nearSpawn.length) out.push(`Enemies start within 12 units of the player start (${idList(nearSpawn)}): the player is attacked right away.`);
+  if (offGround.length) out.push(tr('app.check.offGround', { ids: idList(offGround) }));
+  if (nearSpawn.length) out.push(tr('app.check.nearSpawn', { ids: idList(nearSpawn) }));
   const arenas = [];
   for (const b of bosses) {
     const a = bossArena(b);
     const g = Array.isArray(b.gate) && b.gate.length >= 4 && b.gate.slice(0, 4).every(Number.isFinite);
-    if (!a || !g) out.push(`The boss ${b.id} has no ${!a && !g ? 'arena and gate' : !a ? 'arena' : 'gate'}: select it and use “Add arena and gate” in the Inspector.`);
+    if (!a || !g) {
+      const what = !a && !g ? tr('app.check.boss.arenaGate') : !a ? tr('app.check.boss.arena') : tr('app.check.boss.gate');
+      out.push(tr('app.check.boss.missing', { id: b.id, what }));
+    }
     const extra = bossExtraCount(b);
     if (extra) {
-      const asked = b.count != null && b.count !== '' ? `Count ${b.count}` : `${extra + 1} spot offsets`;
-      out.push(`The boss ${b.id} has ${asked}, but the boss spawns alone: the game ignores the other ${extra}. Set its Count to 1 in the Inspector.`);
+      const asked = b.count != null && b.count !== '' ? tr('app.check.boss.count', { count: b.count }) : tr('app.check.boss.offsets', { n: extra + 1 });
+      out.push(tr('app.check.boss.extra', { id: b.id, asked, extra }));
     }
     const gap = gateEdgeGap(b);
-    if (gap != null && gap > GATE_EDGE_TOLERANCE) out.push(`The gate of ${b.id} is not on its arena's edge (an end is ${gap.toFixed(1)} units off): the gate's ember wall would not meet the arena's barrier. Drag the gate ends onto the arena's edge.`);
+    if (gap != null && gap > GATE_EDGE_TOLERANCE) out.push(tr('app.check.boss.gateOff', { id: b.id, gap: gap.toFixed(1) }));
     if (a) arenas.push(a);
   }
-  if (bosses.length > 1) out.push(`There are ${bosses.length} boss groups (${idList(bosses.map((b) => b.id))}); a level has one Cinderheart.`);
-  if (stray.length) {
-    const one = stray.length === 1;
-    out.push(`${idList(stray)} ${one ? 'has a boss arena but is' : 'have boss arenas but are'} not the boss: the game ignores ${one ? 'it' : 'them'}. Use “Remove arena” in the Inspector, or set Kind to golem.`);
-  }
+  if (bosses.length > 1) out.push(tr('app.check.boss.many', { n: bosses.length, ids: idList(bosses.map((b) => b.id)) }));
+  if (stray.length) out.push(trn('app.check.boss.stray', stray.length, { ids: idList(stray) }));
   const crowding = [];
   for (const o of enemies) {
     if (ownValue(ENEMY_INFO, o.kind)?.boss) continue;
@@ -1841,7 +1894,7 @@ function combatIssues(L, exactTest = null) {
       if (Math.hypot(dx, dz) - r < 6) { crowding.push(o.id); break; }
     }
   }
-  if (crowding.length) out.push(`Enemy groups live within 6 units of the boss arena (${idList(crowding)}): keep their home (radius + 2) at least 6 units from it.`);
+  if (crowding.length) out.push(tr('app.check.boss.crowding', { ids: idList(crowding) }));
   return out;
 }
 
@@ -1863,11 +1916,11 @@ function walkableEdges(L) {
     }
     return r;
   };
-  const add = (name, axis, r) => { if (r.length) out.push(`${name} edge ${axis} ${r.slice(0, 3).join(', ')}${r.length > 3 ? '…' : ''}`); };
-  add('north', 'x', runs(L.width, (i) => walk(i, 0)));
-  add('south', 'x', runs(L.width, (i) => walk(i, L.depth - 1)));
-  add('west', 'z', runs(L.depth, (j) => walk(0, j)));
-  add('east', 'z', runs(L.depth, (j) => walk(L.width - 1, j)));
+  const add = (side, axis, r) => { if (r.length) out.push(tr('app.check.edge', { side, axis, runs: `${r.slice(0, 3).join(', ')}${r.length > 3 ? '…' : ''}` })); };
+  add(tr('app.check.side.north'), 'x', runs(L.width, (i) => walk(i, 0)));
+  add(tr('app.check.side.south'), 'x', runs(L.width, (i) => walk(i, L.depth - 1)));
+  add(tr('app.check.side.west'), 'z', runs(L.depth, (j) => walk(0, j)));
+  add(tr('app.check.side.east'), 'z', runs(L.depth, (j) => walk(L.width - 1, j)));
   return out;
 }
 

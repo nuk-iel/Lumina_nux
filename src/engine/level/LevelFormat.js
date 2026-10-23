@@ -14,6 +14,7 @@ import { LEVEL_HEIGHT } from '../constants.js';
 import { OBJECT_TYPES, createObject, normalizeObject } from './ObjectCatalog.js';
 import { isOwnKey, showValue, toText, toNumber, hasUnconvertible, stripUnconvertible } from '../utils/own.js';
 import { cleanTextKeysOf, LEVEL_TEXT_FIELDS } from '../i18n/ContentKeys.js';
+import { lm } from './messages.js';
 
 /**
  * @import { Level, LevelEnvironment, LevelObjectOf, ObjectType, ObjectOverrides, TileDef,
@@ -194,24 +195,28 @@ function clampSize(n) {
 
 /**
  * Normalise any (possibly partial, older or hand-edited) level object into a complete v1 level.
- * Never throws for recoverable problems; they are reported in `warnings`.
+ * Never throws for recoverable problems; they are reported in `warnings` (worded in the current
+ * language, strings.js 'levelmsg': English in Node). `newer`: the file's
+ * `version` is newer than this engine's (one of the warnings says so; a UI can test the flag
+ * instead of the wording).
  * @param {any} raw
- * @returns {{ level: Level, warnings: string[] }}
+ * @returns {{ level: Level, warnings: string[], newer: boolean }}
  */
 export function normalizeLevel(raw) {
   const warnings = [];
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Level data is not an object');
-  if (raw.format && raw.format !== LEVEL_FORMAT) throw new Error(`Unknown level format "${showValue(raw.format)}"`);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(lm('format.notObject'));
+  if (raw.format && raw.format !== LEVEL_FORMAT) throw new Error(lm('format.unknown', { format: showValue(raw.format) }));
   // any other JSON (package.json, a settings file…) must not open as a blank level
-  if (!raw.format && !Array.isArray(raw.tiles) && !Array.isArray(raw.heights)) throw new Error('Not a Luminati level (no "format": "luminati-level" and no tiles)');
-  if (toNumber(raw.version ?? 1) > LEVEL_VERSION) warnings.push(`Level version ${showValue(raw.version)} is newer than this engine (${LEVEL_VERSION}); some data may be ignored.`);
+  if (!raw.format && !Array.isArray(raw.tiles) && !Array.isArray(raw.heights)) throw new Error(lm('format.notLevel'));
+  const newer = toNumber(raw.version ?? 1) > LEVEL_VERSION;
+  if (newer) warnings.push(lm('warn.newer', { version: showValue(raw.version), engine: LEVEL_VERSION }));
 
   // (rows String() cannot convert — a JSON object with an own `toString` key — become '')
   const tilesIn = Array.isArray(raw.tiles) ? raw.tiles.map((r) => toText(r, '')) : [];
   const heightsIn = Array.isArray(raw.heights) ? raw.heights.map((r) => toText(r, '')) : [];
   let depth = clampSize(raw.depth ?? tilesIn.length ?? MIN_SIZE);
   let width = clampSize(raw.width ?? Math.max(0, ...tilesIn.map((r) => r.length)));
-  if (!tilesIn.length) warnings.push('Level has no tiles; filled with grass.');
+  if (!tilesIn.length) warnings.push(lm('warn.noTiles'));
 
   const legend = { ...defaultLegend(), ...(raw.legend && typeof raw.legend === 'object' ? raw.legend : {}) };
   // a tile field String() cannot convert (a texture name `{"toString": 1}`) is dropped from a copy
@@ -219,7 +224,7 @@ export function normalizeLevel(raw) {
   for (const k of Object.keys(legend)) if (hasUnconvertible(legend[k])) legend[k] = stripUnconvertible(clone(legend[k]));
   // a tile is one character of a row: a longer key (e.g. "constructor") is kept in the file, but
   // no tile can use it (the editor's palette leaves it out)
-  for (const k of Object.keys(legend)) if (k.length !== 1) warnings.push(`Legend key "${k}" is not a single character; no tile can use it.`);
+  for (const k of Object.keys(legend)) if (k.length !== 1) warnings.push(lm('warn.legendKey', { key: k }));
   const tiles = [];
   const heights = [];
   for (let j = 0; j < depth; j++) {
@@ -230,12 +235,12 @@ export function normalizeLevel(raw) {
     let fixed = '';
     for (const ch of t) {
       if (legend[ch]) fixed += ch;
-      else { fixed += 'g'; warnings.push(`Unknown tile char "${ch}" in row ${j}; replaced with grass.`); }
+      else { fixed += 'g'; warnings.push(lm('warn.tileChar', { ch, row: j })); }
     }
     tiles.push(fixed);
     heights.push([...h].map((c) => levelToChar(charToLevel(c))).join(''));
   }
-  if (tilesIn.length && tilesIn.length !== depth) warnings.push(`Row count ${tilesIn.length} ≠ depth ${depth}; padded / truncated.`);
+  if (tilesIn.length && tilesIn.length !== depth) warnings.push(lm('warn.rowCount', { rows: tilesIn.length, depth }));
 
   // (environment and water values String() cannot convert are dropped: the defaults apply, LVL-18)
   const env = { ...DEFAULT_ENVIRONMENT, ...ownCopy(raw.environment) };
@@ -254,7 +259,7 @@ export function normalizeLevel(raw) {
   const objects = [];
   const rawObjects = (Array.isArray(raw.objects) ? raw.objects : []).filter((o) => {
     if (o && isOwnKey(OBJECT_TYPES, o.type)) return true;
-    warnings.push(`Unknown object type "${showValue(o?.type)}" skipped.`);
+    warnings.push(lm('warn.objectType', { type: showValue(o?.type) }));
     return false;
   });
   // every id the file uses: a renamed object never takes the id of one further down
@@ -265,13 +270,13 @@ export function normalizeLevel(raw) {
     // (the object's text keys are cleaned once, by normalizeObject, which counts what it drops)
     const report = { textKeys: 0, upcased: 0 };
     const n = normalizeObject(o, report);
-    if (report.textKeys) warnings.push(`Object "${showValue(n.id)}": ${report.textKeys} malformed or unknown text key(s) dropped (a key is 32 hex digits of a translatable field the object holds; a key list is no longer than its field).`);
-    if (report.upcased) warnings.push(`Object "${showValue(n.id)}": ${report.upcased} text key(s) of lower-case digits written in upper case.`);
+    if (report.textKeys) warnings.push(lm('warn.objectTextKeys', { id: showValue(n.id), n: report.textKeys }));
+    if (report.upcased) warnings.push(lm('warn.objectUpcased', { id: showValue(n.id), n: report.upcased }));
     // 'spawn' is how the editor addresses the player start: never an object id
     if (!n.id || ids.has(n.id) || n.id === SPAWN_ID) {
       const was = n.id;
       n.id = uniqueId(taken, n.type);
-      if (was) warnings.push(was === SPAWN_ID ? `Object id "${SPAWN_ID}" is reserved for the player start; renamed to "${n.id}".` : `Duplicate object id "${was}" renamed to "${n.id}".`);
+      if (was) warnings.push(was === SPAWN_ID ? lm('warn.reservedId', { reserved: SPAWN_ID, id: n.id }) : lm('warn.duplicateId', { was, id: n.id }));
     }
     taken.add(n.id);
     ids.add(n.id);
@@ -289,8 +294,8 @@ export function normalizeLevel(raw) {
     if (f.startsWith('title.') && Object.prototype.hasOwnProperty.call(envTitle, f.slice(6))) rootTexts[f] = envTitle[f.slice(6)];
   }
   const rootKeys = cleanTextKeysOf('root', raw.textKeys, rootTexts);
-  if (rootKeys.dropped) warnings.push(`textKeys: ${rootKeys.dropped} malformed or unknown text key(s) dropped (a key is 32 hex digits of a text the level holds: its subtitle or a line of environment.title).`);
-  if (rootKeys.upcased) warnings.push(`textKeys: ${rootKeys.upcased} text key(s) of lower-case digits written in upper case.`);
+  if (rootKeys.dropped) warnings.push(lm('warn.rootTextKeys', { n: rootKeys.dropped }));
+  if (rootKeys.upcased) warnings.push(lm('warn.rootUpcased', { n: rootKeys.upcased }));
 
   // top-level fields this engine does not know (a newer version, a tool's notes) are kept as
   // they are and written back after `objects` — in the file's own order, the level's `textKeys`
@@ -324,7 +329,7 @@ export function normalizeLevel(raw) {
     objects,
     ...extra,
   };
-  return { level, warnings };
+  return { level, warnings, newer };
 }
 
 /** The selection token of the player start in the editor; reserved (never an object id). */
@@ -370,22 +375,42 @@ export function isWalkablePoint(level, x, z) {
 }
 
 /**
- * Hard errors that make a level unplayable (empty = OK). Use after `normalizeLevel` for
- * user-facing checks (e.g. before play-testing).
+ * A hard error of `validateLevelIssues`: `code` names it independently of the wording —
+ * 'tiles.rows' / 'heights.rows' (row count ≠ depth), 'tiles.row' / 'heights.row' (row `row` has
+ * `length` characters), 'spawn.outside', 'spawn.unwalkable' — and `message` is the English text
+ * `validateLevel` returns.
+ * @typedef {{ code: 'tiles.rows'|'heights.rows'|'tiles.row'|'heights.row'|'spawn.outside'|'spawn.unwalkable',
+ *   message: string, row?: number, length?: number }} LevelIssue
+ */
+
+/**
+ * Hard errors that make a level unplayable (empty = OK), with their codes (a UI that words or
+ * translates them itself: the editor's play-test check).
+ * @param {Level} level
+ * @returns {LevelIssue[]}
+ */
+export function validateLevelIssues(level) {
+  /** @type {LevelIssue[]} */
+  const issues = [];
+  if (level.tiles.length !== level.depth) issues.push({ code: 'tiles.rows', message: 'tiles row count does not match depth' });
+  if (level.heights.length !== level.depth) issues.push({ code: 'heights.rows', message: 'heights row count does not match depth' });
+  level.tiles.forEach((r, j) => { if (r.length !== level.width) issues.push({ code: 'tiles.row', message: `tiles row ${j} has length ${r.length}`, row: j, length: r.length }); });
+  level.heights.forEach((r, j) => { if (r.length !== level.width) issues.push({ code: 'heights.row', message: `heights row ${j} has length ${r.length}`, row: j, length: r.length }); });
+  const { x, z } = level.spawn;
+  if (x < 0 || z < 0 || x >= level.width || z >= level.depth) issues.push({ code: 'spawn.outside', message: 'spawn is outside the map' });
+  // a bridge deck counts: the game walks it (an all-water map with a bridge is playable)
+  else if (!isWalkablePoint(level, x, z)) issues.push({ code: 'spawn.unwalkable', message: 'spawn is not on walkable ground' });
+  return issues;
+}
+
+/**
+ * Hard errors that make a level unplayable (empty = OK), in English. Use after `normalizeLevel`
+ * for user-facing checks (e.g. before play-testing).
  * @param {Level} level
  * @returns {string[]}
  */
 export function validateLevel(level) {
-  const errors = [];
-  if (level.tiles.length !== level.depth) errors.push('tiles row count does not match depth');
-  if (level.heights.length !== level.depth) errors.push('heights row count does not match depth');
-  level.tiles.forEach((r, j) => { if (r.length !== level.width) errors.push(`tiles row ${j} has length ${r.length}`); });
-  level.heights.forEach((r, j) => { if (r.length !== level.width) errors.push(`heights row ${j} has length ${r.length}`); });
-  const { x, z } = level.spawn;
-  if (x < 0 || z < 0 || x >= level.width || z >= level.depth) errors.push('spawn is outside the map');
-  // a bridge deck counts: the game walks it (an all-water map with a bridge is playable)
-  else if (!isWalkablePoint(level, x, z)) errors.push('spawn is not on walkable ground');
-  return errors;
+  return validateLevelIssues(level).map((e) => e.message);
 }
 
 const finite = (v, d) => (Number.isFinite(toNumber(v)) && v !== null && v !== '' ? toNumber(v) : d);
@@ -463,7 +488,7 @@ export function serializeLevel(level) {
 /**
  * Parse level JSON text (or an already-parsed object) into a normalised level.
  * @param {string|object} textOrObject
- * @returns {{ level: Level, warnings: string[] }}
+ * @returns {{ level: Level, warnings: string[], newer: boolean }}
  */
 export function parseLevel(textOrObject) {
   const raw = typeof textOrObject === 'string' ? JSON.parse(textOrObject) : textOrObject;

@@ -20,6 +20,9 @@ import { glyphBadge } from './ToolOptions.js';
 import { ICONS } from '../icons.js';
 import { OBJECT_TYPES, SPAWN_MARKER, objectCenter } from '../../engine/level/ObjectCatalog.js';
 import { hiddenMessage, hiddenReasons, shownOnly, hiddenOnly, leftOutMessage, mayHide, isHidden, notifyHidden } from '../visibility.js';
+import { tr, trn, editorLang } from '../i18n.js';
+import { categoryLabel } from '../catalogI18n.js';
+import catalogStrings from '../strings/catalog.js';
 
 /**
  * @import { EditorState } from '../EditorState.js'
@@ -30,6 +33,21 @@ const ORDER = Object.keys(OBJECT_TYPES);
 
 /** An element id for `aria-activedescendant` (ids and types may hold any character). @param {string} s */
 const domId = (s) => s.replace(/[^\w-]/g, (c) => `_${c.charCodeAt(0).toString(16)}`);
+
+/** @type {Map<string, string>|null} a Chinese catalog text → its English source text(s) */
+let englishOf = null;
+/**
+ * The English catalog text(s) shown as `text` in Chinese ('' none): the filter matches a type's
+ * English name too.
+ * @param {string} text
+ */
+function englishText(text) {
+  if (!englishOf) {
+    englishOf = new Map();
+    for (const [en, zh] of Object.entries(catalogStrings.zh?.text ?? {})) englishOf.set(zh, `${englishOf.get(zh) ?? ''} ${en}`);
+  }
+  return englishOf.get(text) ?? '';
+}
 
 export class Outliner {
   /**
@@ -48,10 +66,10 @@ export class Outliner {
     this.heads = new Map();
     /** The keyboard's active item: `row:<id>` or `group:<type>` ('' none). */
     this._activeKey = '';
-    this.el = h('section', { class: 'le-panel le-outliner', 'aria-label': 'Outliner' });
+    this.el = h('section', { class: 'le-panel le-outliner', 'aria-label': tr('panels.outliner.title') });
     this.count = h('span', { class: 'le-panel-note' });
     this.search = h('input', {
-      class: 'le-input le-search', type: 'search', placeholder: 'Filter objects…', spellcheck: false,
+      class: 'le-input le-search', type: 'search', placeholder: tr('panels.outliner.filter'), spellcheck: false,
       onInput: () => { this.filter = this.search.value.trim().toLowerCase(); this.render(); },
       onKeydown: (e) => {
         if (e.key === 'Escape') { this.search.value = ''; this.filter = ''; this.render(); this.search.blur(); e.stopPropagation(); }
@@ -60,13 +78,13 @@ export class Outliner {
       },
     });
     this.list = h('div', {
-      class: 'le-outliner-list le-scroll', role: 'tree', tabIndex: 0, 'aria-label': 'Objects of the level',
+      class: 'le-outliner-list le-scroll', role: 'tree', tabIndex: 0, 'aria-label': tr('panels.outliner.listAria'),
       'aria-multiselectable': 'true',
       onKeydown: (e) => this._onKey(e),
       onFocus: () => { if (!this._activeEl()) this._setActive(this._firstSelectedKey()); },
     });
     this.el.append(
-      h('div', { class: 'le-panel-header' }, icon(ICONS.layers, 'le-icon le-panel-header-icon'), h('span', { class: 'le-panel-title' }, 'Outliner'), this.count),
+      h('div', { class: 'le-panel-header' }, icon(ICONS.layers, 'le-icon le-panel-header-icon'), h('span', { class: 'le-panel-title' }, tr('panels.outliner.title')), this.count),
       h('div', { class: 'le-search-wrap' }, icon(ICONS.search, 'le-icon le-search-icon'), this.search),
       this.list,
     );
@@ -80,14 +98,17 @@ export class Outliner {
   }
 
   /**
-   * Does the filter list the object (its id, name, type name or category)?
+   * Does the filter list the object (its id, name, type name or category — in Chinese, both the
+   * shown and the English names)?
    * @param {LevelObject} o
    */
   _listed(o) {
     const f = this.filter;
     if (!f) return true;
     const def = OBJECT_TYPES[o.type];
-    return `${o.id} ${o.name ?? ''} ${def?.label ?? o.type} ${def?.category ?? ''}`.toLowerCase().includes(f);
+    let text = `${o.id} ${o.name ?? ''} ${def?.label ?? o.type} ${def?.category ?? ''}`;
+    if (def && editorLang() === 'zh') text += ` ${englishText(def.label)} ${categoryLabel(def.category)}`;
+    return text.toLowerCase().includes(f);
   }
 
   render() {
@@ -111,15 +132,15 @@ export class Outliner {
       if (!groups.has(o.type)) groups.set(o.type, []);
       groups.get(o.type).push(o);
     }
-    this.count.textContent = `${total} object${total === 1 ? '' : 's'}`;
+    this.count.textContent = trn('panels.outliner.count', total);
     // The wanted rows (keyed); existing row elements are reused and only the difference touches
     // the DOM — placing one object on a 400-object level adds one row instead of rebuilding all.
     const items = [];
     const add = (key, make) => items.push({ key, make });
 
     // player start
-    if (!f || 'player start spawn'.includes(f)) {
-      add('row:spawn', () => this._row({ id: 'spawn', glyph: h('span', { class: 'le-glyph is-sm', style: { '--c': SPAWN_MARKER.color } }, SPAWN_MARKER.glyph), label: 'Player start', meta: `${fmt1(st.level.spawn.x)}, ${fmt1(st.level.spawn.z)}` }));
+    if (!f || 'player start spawn'.includes(f) || tr('panels.playerStart').toLowerCase().includes(f)) {
+      add('row:spawn', () => this._row({ id: 'spawn', glyph: h('span', { class: 'le-glyph is-sm', style: { '--c': SPAWN_MARKER.color } }, SPAWN_MARKER.glyph), label: tr('panels.playerStart'), meta: `${fmt1(st.level.spawn.x)}, ${fmt1(st.level.spawn.z)}` }));
     }
     for (const type of ORDER) {
       const objs = groups.get(type);
@@ -139,7 +160,7 @@ export class Outliner {
         });
       }
     }
-    if (!items.length) add(`empty:${f ? 1 : 0}`, () => h('div', { class: 'le-empty' }, f ? 'No objects match the filter.' : 'No objects yet — pick one in the palette (O) and click on the map.'));
+    if (!items.length) add(`empty:${f ? 1 : 0}`, () => h('div', { class: 'le-empty' }, f ? tr('panels.outliner.noMatch') : tr('panels.outliner.empty')));
     // (rows are kept, not rebuilt: the list keeps its scroll position by itself — writing
     // scrollTop here would force a layout of every row on each added object)
     this._reconcile(items);
@@ -196,7 +217,7 @@ export class Outliner {
   _groupHead(type, def, objs, isHidden, collapsed) {
     const st = this.state;
     const eye = h('button', {
-      class: ['le-eye', isHidden && 'is-off'], type: 'button', title: isHidden ? `Show ${def.label} objects` : `Hide ${def.label} objects in the views`,
+      class: ['le-eye', isHidden && 'is-off'], type: 'button', title: isHidden ? tr('panels.outliner.showType', { type: def.label }) : tr('panels.outliner.hideType', { type: def.label }),
       onClick: (e) => {
         e.stopPropagation();
         const hs = new Set(st.view.hiddenTypes ?? []);
@@ -212,7 +233,7 @@ export class Outliner {
         if (e.shiftKey || e.ctrlKey || e.metaKey) { this._selectType(type); this._setActive(this._activeKey, { scroll: false }); return; }
         this._toggleGroup(type);
       },
-      title: 'Click: collapse · Shift+click: select all of this type',
+      title: tr('panels.outliner.groupTitle'),
     }, icon(ICONS.chevronDown, 'le-icon le-group-caret'), glyphBadge(type, 'sm'), h('span', { class: 'le-group-label' }, def.label), h('span', { class: 'le-count' }, String(objs.length)), eye);
   }
 
@@ -242,7 +263,7 @@ export class Outliner {
   _clickRow(id, e) {
     const st = this.state;
     const why = hiddenMessage(st, id);
-    if (why) { notifyHidden(st, `${why}, or double-click its row (F from the keyboard)`, [id]); return; }
+    if (why) { notifyHidden(st, tr('panels.outliner.hiddenClick', { why }), [id]); return; }
     if (e.shiftKey) st.select([id], { additive: true });
     else if (e.ctrlKey || e.metaKey) st.select([id], { toggle: true });
     else st.select([id]);
@@ -263,7 +284,7 @@ export class Outliner {
     /** @type {HTMLDivElement & { _meta?: HTMLSpanElement }} the row; `_meta` its right-hand count */
     const row = h('div', {
       class: ['le-row-item', hidden && 'is-hidden', glyph && 'is-top'], role: 'treeitem', tabIndex: -1, id: `le-ol-r-${domId(id)}`, dataset: { id },
-      title: hidden ? 'Hidden in the views — double-click (or F) to show it again and select it' : null,
+      title: hidden ? tr('panels.outliner.hiddenRow') : null,
       onClick: (e) => { this._activeKey = `row:${id}`; this._setActive(this._activeKey, { scroll: false }); this._clickRow(id, e); },
       // a dimmed row: show it again (the story preview off, its type shown) and select it
       onDblclick: () => this._openRow(id),

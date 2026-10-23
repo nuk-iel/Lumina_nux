@@ -7,6 +7,8 @@ import { OBJECT_TYPES, objectCenter, objectBounds } from '../../engine/level/Obj
 import { TILE_TYPES, TILE_BY_CHAR, getHeightLevel, inBounds } from '../../engine/level/LevelFormat.js';
 import { shiftLegacyFields } from '../EditorState.js';
 import { isOwnKey, ownValue } from '../../engine/utils/own.js';
+import { tr, trn } from '../i18n.js';
+import { optionLabel } from '../catalogI18n.js';
 
 /** @import { TileDef, LevelObject } from '../../engine/level/types.js' */
 
@@ -131,7 +133,7 @@ export function tileLabel(level, ch) {
   const t = ownValue(TILE_BY_CHAR, ch);
   const d = ownValue(level.legend, ch);
   if (t && d) return t.name;
-  return d ? `Custom “${ch}” (${d.top ?? 'void'})` : `Unknown “${ch}”`;
+  return d ? tr('tools.tile.customTop', { ch, top: d.top != null ? optionLabel(d.top) : tr('tools.tile.void') }) : tr('tools.tile.unknown', { ch });
 }
 
 /**
@@ -208,8 +210,8 @@ export function viewToggleOf(o) {
 export function deleteSelection(state) {
   const ids = state.selection.filter((id) => id !== 'spawn');
   if (!ids.length) return false;
-  state.removeObjects(ids, ids.length > 1 ? `Delete ${ids.length} objects` : 'Delete object');
-  state.notify(ids.length > 1 ? `Deleted ${ids.length} objects` : `Deleted ${ids[0]}`);
+  state.removeObjects(ids, trn('tools.undo.delete', ids.length));
+  state.notify(ids.length > 1 ? tr('tools.msg.deletedMany', { n: ids.length }) : tr('tools.msg.deletedOne', { id: ids[0] }));
   return true;
 }
 
@@ -218,10 +220,10 @@ export function duplicateSelection(state, dx = 1, dz = 1) {
   const objs = state.selectedObjects;
   if (!objs.length) return false;
   const copies = objs.map((o) => offsetObject(JSON.parse(JSON.stringify(o)), dx, dz));
-  state.begin('Duplicate');
+  state.begin(tr('tools.undo.duplicate'));
   state.insertObjects(copies);
   state.commit();
-  state.notify(copies.length > 1 ? `Duplicated ${copies.length} objects` : `Duplicated ${objs[0].id}`);
+  state.notify(copies.length > 1 ? tr('tools.msg.duplicatedMany', { n: copies.length }) : tr('tools.msg.duplicatedOne', { id: objs[0].id }));
   return true;
 }
 
@@ -273,7 +275,8 @@ export function rotateSelection(state, delta) {
 
   /** Objects whose relative fields could not follow a turn that is not a quarter. */
   const kept = [];
-  state.begin('Rotate');
+  const undoLabel = tr('tools.undo.rotate');
+  state.begin(undoLabel);
   for (const id of state.selection) {
     if (id === 'spawn') {
       const sp = state.level.spawn;
@@ -317,10 +320,10 @@ export function rotateSelection(state, delta) {
       } else if (def.rotatable || o.rotation != null) {
         o.rotation = normalizeAngle((o.rotation ?? 0) + delta);
       }
-    }, 'Rotate');
+    }, undoLabel);
   }
   state.commit();
-  if (kept.length) state.notify(`Relative areas, spots, gates and talk points turn only in 90° steps (Ctrl+R): not turned on ${kept.length === 1 ? kept[0] : `${kept.length} objects`}`);
+  if (kept.length) state.notify(tr('tools.msg.rotateKept', { what: kept.length === 1 ? kept[0] : trn('tools.objects', kept.length) }));
   return true;
 }
 
@@ -374,7 +377,7 @@ function turnRelativeFields(o, q) {
 /** Move the selection by (dx, dz). */
 export function nudgeSelection(state, dx, dz) {
   if (!state.selection.length) return false;
-  state.moveObjects(state.selection, dx, dz, 'Nudge');
+  state.moveObjects(state.selection, dx, dz, tr('tools.undo.nudge'));
   return true;
 }
 
@@ -410,7 +413,7 @@ export function pasteObjects(state, objects, at = null) {
     dz = snapTo(at.z - cz, 0.5);
   }
   const copies = valid.map((o) => offsetObject(JSON.parse(JSON.stringify(o)), dx, dz));
-  state.begin('Paste');
+  state.begin(tr('tools.undo.paste'));
   // (never leave the transaction open: that would swallow every later undo step and shortcut)
   try {
     return state.insertObjects(copies);

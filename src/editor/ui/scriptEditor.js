@@ -11,6 +11,8 @@ import { showDialog, confirmDialog, keepKeys } from './Dialog.js';
 import { ICONS } from '../icons.js';
 import { parseScript, scriptLines, SCRIPT_COMMANDS } from '../../engine/level/StoryScript.js';
 import { stripScriptTags } from '../../engine/i18n/TextKeys.js';
+import { tr, trn, editorLang } from '../i18n.js';
+import storyStrings from '../strings/story.js';
 
 /** @import { ScriptError } from '../../engine/level/StoryScript.js' */
 
@@ -195,12 +197,12 @@ export function fillErrors(list, errors, target, max = Infinity) {
   list.hidden = !errors.length;
   for (const err of errors.slice(0, max)) {
     list.appendChild(h('button', {
-      class: 'le-script-error', type: 'button', title: `Go to line ${err.line}`,
+      class: 'le-script-error', type: 'button', title: tr('story.errors.goToLine', { line: err.line }),
       onPointerdown: (e) => e.preventDefault(),
       onClick: () => selectLine(target(), err.line),
-    }, h('span', { class: 'le-script-error-line' }, `line ${err.line}:`), ' ', err.msg));
+    }, h('span', { class: 'le-script-error-line' }, tr('story.errors.line', { line: err.line })), ' ', err.msg));
   }
-  if (errors.length > max) list.appendChild(h('div', { class: 'le-script-more' }, `+${errors.length - max} more — open the script editor (⤢) for the full list`));
+  if (errors.length > max) list.appendChild(h('div', { class: 'le-script-more' }, tr('story.errors.more', { n: errors.length - max })));
   if (focused >= 0) {
     const btns = list.querySelectorAll('.le-script-error');
     /** @type {HTMLElement|undefined} */ (btns[Math.min(focused, btns.length - 1)])?.focus({ preventScroll: true });
@@ -210,16 +212,27 @@ export function fillErrors(list, errors, target, max = Infinity) {
 /** A help text with its `quoted` parts as code. @param {string} text */
 const withCode = (text) => text.split('`').map((part, k) => (k % 2 ? h('code', null, part) : part));
 
-/** Short reference of the line kinds (StoryScript.js header). */
+/** Short reference of the line kinds (StoryScript.js header): the syntax and its description's key. */
 const LINE_KINDS = [
-  ['Name: text', 'a line of dialogue ("A voice": text — a quoted speaker)'],
-  ['- text', 'the speaker of the line above says more'],
-  [': text', 'the narrator (no name plate)'],
-  ['> label', 'an option of a choice ([if cond] / [once] before the label)'],
-  ['* text', 'an alternative of cycle / seq / pick'],
-  ['# text', 'a comment'],
-  ['${gold}', 'a value in a line of text (${item:plank}, ${hour} …)'],
+  ['Name: text', 'story.kinds.dialogue'],
+  ['- text', 'story.kinds.more'],
+  [': text', 'story.kinds.narrator'],
+  ['> label', 'story.kinds.option'],
+  ['* text', 'story.kinds.alternative'],
+  ['# text', 'story.kinds.comment'],
+  ['${gold}', 'story.kinds.value'],
 ];
+
+/**
+ * A command's help as the reference shows it: the engine's own (English), or its translation
+ * where the editor's table has one.
+ * @param {string} name
+ * @param {{ help: string }} c
+ */
+function commandHelp(name, c) {
+  const key = `story.cmd.${name}.help`;
+  return editorLang() === 'zh' && Object.hasOwn(storyStrings.zh, key) ? tr(key) : c.help;
+}
 
 /**
  * The pop-out script editor: a wide modal with a line-number gutter, the script keys, the full
@@ -234,14 +247,14 @@ const LINE_KINDS = [
 export function scriptEditorDialog({ title, text, mixed = false }) {
   const ta = /** @type {HTMLTextAreaElement} */ (h('textarea', {
     class: 'le-input le-script-text', wrap: 'off', rows: 24,
-    placeholder: mixed ? 'mixed — the text written here replaces every selected script' : 'Name: Hello, traveler!\nchoice Will you help?\n  > Yes\n    set helping',
+    placeholder: mixed ? tr('story.editor.mixedPlaceholder') : tr('story.editor.placeholder'),
   }));
   ta.value = text;
   ta.setAttribute('autofocus', '');
   const gutter = h('div', { class: 'le-script-gutter', 'aria-hidden': 'true' });
   const status = h('div', { class: 'le-script-status' });
   const errors = h('div', { class: 'le-script-errors le-scroll' });
-  const filter = /** @type {HTMLInputElement} */ (h('input', { class: 'le-input le-script-filter', type: 'search', placeholder: 'Filter commands…' }));
+  const filter = /** @type {HTMLInputElement} */ (h('input', { class: 'le-input le-script-filter', type: 'search', placeholder: tr('story.editor.filter') }));
   filter.setAttribute('spellcheck', 'false');
   // (Enter in the filter does not apply the dialog; Esc clears a filter instead of closing)
   filter.dataset.keepsEnter = '1';
@@ -267,14 +280,15 @@ export function scriptEditorDialog({ title, text, mixed = false }) {
     const q = filter.value.trim().toLowerCase();
     clear(cmds);
     for (const [name, c] of Object.entries(SCRIPT_COMMANDS)) {
-      if (q && !name.includes(q) && !c.help.toLowerCase().includes(q)) continue;
+      const help = commandHelp(name, c);
+      if (q && !name.includes(q) && !c.help.toLowerCase().includes(q) && !help.toLowerCase().includes(q)) continue;
       cmds.appendChild(h('button', {
-        class: 'le-script-cmd', type: 'button', title: `Insert "${name}" at the cursor`,
+        class: 'le-script-cmd', type: 'button', title: tr('story.editor.insert', { name }),
         onPointerdown: (e) => e.preventDefault(),
         onClick: () => insert(name),
-      }, h('div', { class: 'le-script-cmd-sig' }, h('b', null, name), c.args ? ` ${c.args}` : ''), h('div', { class: 'le-script-cmd-help' }, withCode(c.help))));
+      }, h('div', { class: 'le-script-cmd-sig' }, h('b', null, name), c.args ? ` ${c.args}` : ''), h('div', { class: 'le-script-cmd-help' }, withCode(help))));
     }
-    if (!cmds.childElementCount) cmds.appendChild(h('div', { class: 'le-empty' }, 'No command matches.'));
+    if (!cmds.childElementCount) cmds.appendChild(h('div', { class: 'le-empty' }, tr('story.editor.noMatch')));
   };
   filter.addEventListener('input', fillCmds);
   fillCmds();
@@ -295,7 +309,7 @@ export function scriptEditorDialog({ title, text, mixed = false }) {
       clear(gutter).appendChild(frag);
     }
     gutter.scrollTop = ta.scrollTop;
-    status.textContent = `${n} line${n === 1 ? '' : 's'} · ${errs.length ? `${errs.length} problem${errs.length === 1 ? '' : 's'}` : 'no problems'}`;
+    status.textContent = `${trn('story.editor.lines', n)} · ${errs.length ? trn('story.editor.problems', errs.length) : tr('story.editor.noProblems')}`;
     status.classList.toggle('is-warn', errs.length > 0);
     fillErrors(errors, errs, () => ta);
   };
@@ -310,20 +324,20 @@ export function scriptEditorDialog({ title, text, mixed = false }) {
       status,
       errors),
     h('aside', { class: 'le-script-ref' },
-      h('div', { class: 'le-script-ref-title' }, 'Lines'),
-      h('div', { class: 'le-script-kinds' }, LINE_KINDS.map(([k, t]) => h('div', { class: 'le-script-kind' }, h('code', null, k), h('span', null, t)))),
-      h('div', { class: 'le-script-ref-title' }, 'Commands', h('span', { class: 'le-dim' }, ' — click to insert')),
+      h('div', { class: 'le-script-ref-title' }, tr('story.editor.refLines')),
+      h('div', { class: 'le-script-kinds' }, LINE_KINDS.map(([k, t]) => h('div', { class: 'le-script-kind' }, h('code', null, k), h('span', null, tr(t))))),
+      h('div', { class: 'le-script-ref-title' }, tr('story.editor.refCommands'), h('span', { class: 'le-dim' }, tr('story.editor.clickToInsert'))),
       filter,
       cmds));
   let result = null;
   dlg = showDialog({
     title, icon: ICONS.pencil, width: 1180, className: 'is-script-dialog',
-    subtitle: 'Tab / Shift+Tab indent at a line\'s start or on selected lines · Enter keeps the indentation · Ctrl+Enter applies',
+    subtitle: tr('story.editor.subtitle'),
     content,
     buttons: [
-      { label: 'Cancel', value: null },
+      { key: 'Cancel', label: tr('common.cancel'), value: null },
       {
-        label: 'Apply', primary: true,
+        key: 'Apply', label: tr('common.apply'), primary: true,
         onClick: () => {
           const t = ta.value;
           // unchanged: nothing is written; a mixed selection's empty text would erase every script
@@ -333,8 +347,11 @@ export function scriptEditorDialog({ title, text, mixed = false }) {
     ],
     // Esc / ×: a changed text is not dropped without asking
     beforeClose: async () => ta.value === text || (await confirmDialog({
-      title: 'Discard changes?', message: 'The script was changed. Close the script editor without applying the changes?',
-      buttons: [{ label: 'Keep editing', value: false, primary: true }, { label: 'Discard', value: true, danger: true }],
+      title: tr('story.editor.discardTitle'), message: tr('story.editor.discardMessage'),
+      buttons: [
+        { key: 'Keep editing', label: tr('story.editor.keepEditing'), value: false, primary: true },
+        { key: 'Discard', label: tr('story.editor.discard'), value: true, danger: true },
+      ],
     })) === true,
   });
   return dlg.result.then((r) => (r === 'Apply' ? result : null));
@@ -343,7 +360,7 @@ export function scriptEditorDialog({ title, text, mixed = false }) {
 /** The pop-out button of a script field. */
 export function popOutButton(onClick) {
   return h('button', {
-    class: 'le-mini-btn le-script-pop-btn', type: 'button', title: 'Open the script editor (line numbers, all problems, command reference)', 'aria-label': 'Open the script editor',
+    class: 'le-mini-btn le-script-pop-btn', type: 'button', title: tr('story.editor.popOut'), 'aria-label': tr('story.editor.popOutAria'),
     onClick: (e) => { e.preventDefault(); e.stopPropagation(); onClick(); },
   }, icon(ICONS.external));
 }
