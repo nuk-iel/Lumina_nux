@@ -97,8 +97,9 @@ See [playing the game](docs/user/PLAYING_THE_GAME.md) and the
 ## Languages
 
 Choose a language on the title screen with **L**, or add `?lang=ja`, `?lang=zh` or `?lang=en` to
-`game.html` (use `&lang=…` when another parameter is present). The editor and debug panel use
-English. Level text keeps stable keys; translations live separately in `public/i18n/`.
+`game.html` (use `&lang=…` when another parameter is present). The level editor shows English or
+Simplified Chinese (*View › Language*); the debug panel uses English. Level text keeps stable keys;
+translations live separately in `public/i18n/`.
 
 The [translation guide](docs/specs/I18N.md) explains string tables, content keys, fonts and the
 translator worklist. The [glossary](docs/specs/I18N_GLOSSARY.md) keeps names and terms consistent.

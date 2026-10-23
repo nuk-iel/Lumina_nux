@@ -146,7 +146,9 @@ marks a field players read, which the content-text tools extract for translation
 translated: names as terms (`term`), texts, dialogue, talk scripts, labels and the npc `title` by
 the text keys the data holds beside them (`loc`); identity fields never carry it,
 [I18N.md §4.6](../specs/I18N.md#46-what-is-extracted)). The level file is the same in every
-language: translations live in `public/i18n/`, never in the level, and the editor stays English.
+language: translations live in `public/i18n/`, never in the level. The editor's own UI shows
+English or Simplified Chinese ([I18N.md §6](../specs/I18N.md#6-the-level-editor)); what it writes
+into a level does not depend on that language.
 The keys are GUIDs kept through every edit, so inserting a page, reordering lines or renaming an
 object's id keeps every translation; an edited text keeps its key and shows English until it is
 reviewed ([OBJECT_CATALOG.md §13.3](../specs/OBJECT_CATALOG.md#133-translations)). The editor

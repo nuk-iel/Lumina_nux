@@ -23,6 +23,7 @@ Luminati 是一个基于 three.js 和纯 JavaScript ES 模块构建的 2.5D 像�
 | `npm run story:test`、`npm run api:test`、`npm run level:test` | 运行相关的 Node 自测。 |
 | `npm run i18n:keys`、`npm run i18n:check -- --strict --complete` | 检查内容键和随附的翻译。 |
 | `npm run i18n:test`、`npm run keys:test` | 运行翻译和文本键自测。 |
+| `npm run editor:i18n:test` | 检查编辑器语言包：中英文键一一对应、占位符一致、标点、目录条目全部翻译。 |
 
 Vite 不做类型检查，构建成功不能代替 `npm run typecheck`。浏览器检查工具会自动查找 Windows 上标准安装的 Chrome/Edge；如需使用其他可执行文件，请设置 `CHROME_PATH`。它会请求 ANGLE 的 D3D11 后端，因此在其他平台上需确认浏览器/GPU 支持情况，并报告验证受限之处。选项和脚本见[测试与验证](docs/development/TESTING_AND_VERIFICATION.md)。
 
@@ -39,7 +40,7 @@ Vite 不做类型检查，构建成功不能代替 `npm run typecheck`。浏览�
 - 将每个关卡的状态放在关卡生命周期中，并在战役切换关卡时释放/重新指向这些状态。保留房间的分离/附加缓存、编辑器事务与撤销，以及按需加载功能的生命周期。和平关卡不得创建任何战斗状态；没有剧情或队伍的关卡不得产生相应的运行时开销。
 - 新增目录条目需要构建器、JSDoc 类型、编辑器支持和生成器覆盖。星落谷（Starfall）覆盖和平功能，烬望隘口（Cinderwatch）覆盖战斗，摆渡人的提灯（Ferryman）战役覆盖关卡切换/剧情，室内战役覆盖家具。请遵循对应的任务手册并执行其检查。
 - 资源/API 的 URL 应基于 `import.meta.env.BASE_URL` 或相对于页面/模块的 URL 构建。`/levels/` 这类根路径会导致子路径部署失效；请用 `--base=project` 和构建后的页面进行验证。
-- 使用像素 UI 组件库、完整的美术像素、调色板以及字体/布局辅助函数。UI 文本使用 `t()`，并提供英文、日文和简体中文字符串。内容文本使用 `loc(key, english)`；名称使用 `term(name)`。数据中保留英文标识，仅在显示时翻译。
+- 使用像素 UI 组件库、完整的美术像素、调色板以及字体/布局辅助函数。UI 文本使用 `t()`，并提供英文、日文和简体中文字符串。内容文本使用 `loc(key, english)`；名称使用 `term(name)`。数据中保留英文标识，仅在显示时翻译。编辑器界面文本使用 `tr()`（`src/editor/strings/`，英文条目必须与原英文逐字一致），目录标签走 `src/editor/strings/catalog.js`；逻辑不得依赖翻译后的文字（[I18N.md §6](docs/specs/I18N.md#6-the-level-editor)）。
 - 编辑时保留文本键。编辑器、生成器和 `i18n:keys` 会生成 GUID 和 `#line:` 标签；不要手工编辑或复制它们。新的可翻译字段需要提取器/键支持。使用工作清单工具更新内容表；测量文本前先加载 CJK 字形。
 - 为公共 API 添加 JSDoc。从根源上修复类型错误；只在类型检查器无法理解合法代码时才使用类型断言，并对任何 `@ts-expect-error` 加以说明。按需加载的字段要在所在文件夹的 `types.d.ts` 中声明，绝不要使用会遮蔽 JavaScript 文件的同名声明文件。被生成器导入的模块必须能在 Node 中安全运行。
 

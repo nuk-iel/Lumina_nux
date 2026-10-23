@@ -77,7 +77,8 @@ flowchart LR
 | Path | Role |
 | --- | --- |
 | `editor.html` | Entry page (Vite multi-page input `editor`). Boot splash; a tiny inline script shows "The level editor could not load" if the module fails to import. |
-| `src/editor/main.js` | Imports the Cinzel font and `editor.css`, `new EditorApp(#editor)`; `app.ready` adds `le-booted` to `<html>`; a constructor exception renders a fatal error box. |
+| `src/editor/main.js` | Imports `langBoot.js` first (the UI language, before any other editor module evaluates), the Cinzel font and `editor.css` (Noto Sans SC too when the editor shows Chinese), `new EditorApp(#editor)`; `app.ready` adds `le-booted` to `<html>`; a constructor exception renders a fatal error box. |
+| `src/editor/i18n.js`, `langBoot.js`, `strings/`, `catalogI18n.js`, `brand.js` | The UI language ([I18N.md §6](../specs/I18N.md#6-the-level-editor)): `tr()` / `trn()` over the `editor` table (one module per area in `strings/`), `andList` / `commaList`, `switchLanguage`; the catalog's display text as language-aware getters (`strings/catalog.js`, `optionLabel`, `categoryLabel`); the product name (`BRAND_NAME`). |
 | `src/editor/EditorApp.js` | The application: layout, menus / commands / shortcuts, clipboard, context menu, dialogs, open / save / export / play-test, autosave, preferences, level checks, `window.__editor`. |
 | `src/editor/EditorState.js` | Document, transactions and history, change events, selection, tool, options, view, hover, revisions. Also `shiftLegacyFields()`. |
 | `src/editor/autosave.js` | The `__autosave__` working copy and the recovered copies of other sessions. |

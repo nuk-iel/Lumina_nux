@@ -54,7 +54,7 @@ import {
 
 /** The repository root. */
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-/** Folders scanned for loc('…') calls — the editor stays English. */
+/** Folders scanned for loc('…') calls (the editor's own UI strings are checked by test-editor-i18n.mjs). */
 export const CODE_DIRS = Object.freeze(['src/game', 'src/engine']);
 /** …minus these (the i18n modules define loc and show it in their docs). */
 export const CODE_SKIP = new Set(['src/engine/i18n']);

@@ -75,7 +75,7 @@ npm run preview    # Preview the build locally
 
 ## 语言
 
-在标题画面按 **L** 选择语言，或在 `game.html` 后加上 `?lang=ja`、`?lang=zh` 或 `?lang=en`（如果已有其他参数，请使用 `&lang=…`）。编辑器和调试面板使用英语。关卡文本保留稳定的键名；翻译单独存放在 `public/i18n/` 中。
+在标题画面按 **L** 选择语言，或在 `game.html` 后加上 `?lang=ja`、`?lang=zh` 或 `?lang=en`（如果已有其他参数，请使用 `&lang=…`）。关卡编辑器可显示英文或简体中文（*视图 › 语言*），调试面板使用英语。关卡文本保留稳定的键名；翻译单独存放在 `public/i18n/` 中。
 
 [翻译指南](docs/specs/I18N.md)介绍了字符串表、内容键、字体和译者工作清单。[术语表](docs/specs/I18N_GLOSSARY.md)用于保持名称和术语的一致。
 

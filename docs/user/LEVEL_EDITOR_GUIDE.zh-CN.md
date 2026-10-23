@@ -441,7 +441,7 @@ Will you rest until morning? [Not yet | Rest until morning]
 
 **其他村民字段**：*Name*（显示在铭牌上）、*Title*（可选：村民说话时铭牌旁的小头衔，例如 *Warden of the Cinderwatch*（烬望守卫）；留空 = 无）、*Look*（14 种角色预设：traveler、swordsman、merchant、cleric、scholar、dancer、hunter、villager、farmer、elder、child、guard、innkeeper、bard）、*Facing*、*Behaviour*——**wander**（在其位置周围的 *Wander radius* 范围内闲逛）、**post**（站立并四处张望）、**perform**（像吟游诗人一样面向观众）、**chase**（追赶鸡）——*Walk speed*、*Name plate colour*，以及 *Built-in script*，它会用烬落村手写的某段对话（elder、innkeeper、merchant、guard、farmer、child、bard、scholar）替换对话内容。
 
-**语言。** 请用英文编写关卡文本。游戏通过与关卡分开保存的翻译表（`public/i18n/`，[I18N.md](../specs/I18N.md)）以日文或中文显示它们——关卡文件不包含任何翻译，编辑器界面也始终为英文。你自己制作的关卡在为其制作翻译表之前都以英文运行（[I18N.md §4.7](../specs/I18N.md#47-checker-worklist-and-exchange)）；项目关卡的试玩（F5）在存在翻译表时，会加载其打开来源文件的翻译表（`&i18n=levels/<name>`）。
+**语言。** 请用英文编写关卡文本。游戏通过与关卡分开保存的翻译表（`public/i18n/`，[I18N.md](../specs/I18N.md)）以日文或中文显示它们——关卡文件不包含任何翻译。（编辑器自身的菜单和面板可以显示中文：*视图 › 语言*；你写入的关卡文本保持原样。）你自己制作的关卡在为其制作翻译表之前都以英文运行（[I18N.md §4.7](../specs/I18N.md#47-checker-worklist-and-exchange)）；项目关卡的试玩（F5）在存在翻译表时，会加载其打开来源文件的翻译表（`&i18n=levels/<name>`）。
 
 翻译依据的是每条文本的**文本键**——编辑器存储在文本旁边、并以只读方式显示在其字段下方的 ID（[§6.1](#61-显示内容)）——而不是英文措辞，也不是文本所在的位置。因此，在已有翻译的关卡（随附的关卡）中：
 

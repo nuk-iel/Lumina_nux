@@ -735,7 +735,7 @@ banners and title screens.
   that come with the game, so a locally served build can play without internet access; the first
   load after a failure may take a few seconds longer.
 - HP, MP, SP, Lv, G, key names and numbers stay in Latin letters in every language, as in Japanese
-  and Chinese RPGs. The level editor and the debug panel stay English.
+  and Chinese RPGs. The debug panel stays English; the level editor shows English or Chinese.
 - A level you made yourself, or a line of a shipped level edited since it was translated, shows
   its text in English until its translation is added — the rest of the game stays in your
   language.

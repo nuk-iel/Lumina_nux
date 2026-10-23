@@ -163,7 +163,7 @@ production build — see [development/TESTING_AND_VERIFICATION.md](../developmen
 
 ### 4.4 The launcher
 
-The front page, `/` (`index.html`), lists what the project holds, in English (like the editor):
+The front page, `/` (`index.html`), lists what the project holds, in English:
 
 - **Campaigns** — every `public/campaigns/<name>/campaign.json`: its name, the title screen's
   subtitle, its levels and chapters. *Play* opens `game.html?campaign=<name>` (the campaign's title

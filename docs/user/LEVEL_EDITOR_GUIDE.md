@@ -682,7 +682,8 @@ farmer, child, bard, scholar).
 
 **Languages.** Write a level's texts in English. The game shows them in Japanese or Chinese from
 translation tables kept apart from the level (`public/i18n/`, [I18N.md](../specs/I18N.md)) — the
-level file holds no translation, and the editor stays English. A level you make yourself plays in
+level file holds no translation. (The editor's own menus and panels can show Chinese: *View ›
+Language*; the level texts you write stay as typed.) A level you make yourself plays in
 English until tables are made for it ([I18N.md §4.7](../specs/I18N.md#47-checker-worklist-and-exchange));
 the play-test (F5) of a project level loads the table of the file it was opened from when there is
 one (`&i18n=levels/<name>`).

@@ -1138,6 +1138,19 @@ p.le-hint.le-pad:first-child { padding-top: 12px; }
    stack (Noto Sans SC loads in slices — src/editor/main.js — over the system's YaHei / PingFang),
    no capitals or letter-spacing (they do nothing for CJK and spread the characters apart), and
    CJK-friendly line breaks. Cinzel is Latin-only: Chinese level names fall back to the sans face. */
+/* Chinese quotes, dashes and the ellipsis from a CJK face: full-width, as Chinese text sets them
+   (the Latin faces first in the stacks would draw narrow Western glyphs) */
+@font-face {
+  font-family: "le-cjk-punct";
+  src: local("Microsoft YaHei"), local("PingFang SC"), local("Noto Sans SC"), local("Source Han Sans SC");
+  unicode-range: U+2014, U+2018-2019, U+201C-201D, U+2026;
+}
+@font-face {
+  font-family: "le-cjk-punct";
+  font-weight: 600 900;
+  src: local("Microsoft YaHei Bold"), local("PingFang SC Semibold"), local("Noto Sans SC Bold");
+  unicode-range: U+2014, U+2018-2019, U+201C-201D, U+2026;
+}
 :lang(zh-Hans) {
   --le-cjk: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC";
   --le-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, "Noto Sans SC", "Microsoft YaHei", monospace;
@@ -1149,7 +1162,7 @@ p.le-hint.le-pad:first-child { padding-top: 12px; }
 :lang(zh-Hans) .le-overlay,
 :lang(zh-Hans) .lvp3d-label,
 :lang(zh-Hans) .lvp3d-badge {
-  font-family: system-ui, -apple-system, "Segoe UI", var(--le-cjk), sans-serif;
+  font-family: "le-cjk-punct", system-ui, -apple-system, "Segoe UI", var(--le-cjk), sans-serif;
   line-break: strict;
   word-break: normal;
   overflow-wrap: anywhere;
